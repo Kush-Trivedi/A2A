@@ -75,48 +75,35 @@ used at runtime via the kit `PromptStore`; ACE records them per agent version
 (`GET /api/v1/admin/agents/{key}/versions`, `POST .../versions/{v}/activate`
 to roll back).
 
-## Setup with uv
+## Setup with uv — full install commands
 
 Prereqs: Python 3.13+, [uv](https://docs.astral.sh/uv/), Node 22, Postgres 17
-with pgvector.
-
-**Cloned this repo?** The `pyproject.toml` + `uv.lock` are already in every
-folder — just sync:
+with pgvector. Every library the platform uses, unpinned — uv resolves the
+latest releases. Each `uv add` is one line: copy, paste, done.
 
 ```powershell
-cd ACE;              uv sync        # control plane
-cd Agents\<agent>;   uv sync        # each agent (repeat per agent folder)
-cd ACE\frontend;     npm install    # UI
-```
-
-**Building a project from scratch** (new agent, or recreating the env
-without the lockfiles) — `uv init` then `uv add` everything, no pinned
-versions; uv resolves current releases and writes the lock:
-
-```powershell
-# ACE control plane   (from A2A\ACE)
+# ── ACE control plane ──────────────────────────────────────────  (A2A\ACE)
 uv init --python 3.13
-uv add --editable ..\Agents\agent_kit          # shared ace-agent-kit (local path)
-uv add a2a-sdk asyncpg azure-core azure-identity azure-keyvault-secrets `
-  azure-storage-blob casbin casbin-async-sqlalchemy-adapter databricks-sdk `
-  fastapi httpx itsdangerous "markitdown[all]" openai "pyjwt[crypto]" `
-  python-json-logger python-multipart pyyaml requests rich `
-  "sqlalchemy[asyncio]" sqlmodel tiktoken twilio "uvicorn[standard]"
+uv add --editable ..\Agents\agent_kit
+uv add a2a-sdk asyncpg azure-core azure-identity azure-keyvault-secrets azure-storage-blob casbin casbin-async-sqlalchemy-adapter databricks-sdk fastapi httpx itsdangerous "markitdown[all]" openai "pyjwt[crypto]" python-json-logger python-multipart pyyaml requests rich "sqlalchemy[asyncio]" sqlmodel tiktoken twilio "uvicorn[standard]"
 
-# Any team agent   (from A2A\Agents\<your_agent>)
+# ── Any team agent ─────────────────────────────  (A2A\Agents\<your_agent>)
 uv init --python 3.13
-uv add --editable ..\agent_kit                 # shared ace-agent-kit (local path)
+uv add --editable ..\agent_kit
 uv add "a2a-sdk[http-server]" httpx "pyjwt[crypto]" pyyaml uvicorn
 
-# The shared kit itself   (from A2A\Agents\agent_kit — only if rebuilding it)
+# ── Shared kit (only if rebuilding it) ─────────  (A2A\Agents\agent_kit)
 uv init --lib --python 3.13
 uv add a2a-sdk httpx
+
+# ── Frontend ───────────────────────────────────────────  (A2A\ACE\frontend)
+npm install
 ```
 
 `ace-agent-kit` is always an **editable local path dependency** (never
 published) — one shared implementation of ContextEnvelope, AgentDelegator,
-AceCapabilityClient, and PromptStore for ACE and every agent. After any
-`uv add`, run with `uv run python -m ...` as shown below.
+AceCapabilityClient, and PromptStore for ACE and every agent. After
+installing, run with `uv run python -m ...` as shown below.
 
 ## Run guide (CLI)
 
