@@ -1,0 +1,43 @@
+# Team-owned agent manifest — ACE Platform team.
+agent:
+  team_key: "ace_platform"
+  agent_key: "file_qa"
+  display_name: "File Q&A Agent"
+  description: "Answers questions strictly from the files you upload in this chat."
+  version: "0.1.0"
+
+server:
+  host: "0.0.0.0"
+  port: 3400
+
+skills:
+  - id: "file_question_answering"
+    name: "File question answering"
+    description: "Answer questions grounded ONLY in the session's uploaded documents."
+    tags: ["files", "upload", "documents"]
+    examples:
+      - "What does the uploaded discharge summary say about follow-up care?"
+
+data: {}
+
+delegations: {}
+
+auth:
+  enabled: false
+  tenant_id: "your_tenant_id"
+  audience: "your_agent_app_id_uri"
+  authority: "https://login.microsoftonline.com"
+  issuer: ""
+  jwks_url: ""
+
+ace:
+  base_url: "http://localhost:3000"
+  public_url: "http://localhost:3400"
+  permission: "chat"
+  allowed_roles:
+    - "developer"
+    - "nurse"
+  # sparse works without LLM embedding creds; switch to hybrid once
+  # microsoft.azure.azure_foundry is configured.
+  retrieval_mode: "sparse"
+  knowledge_sources: []

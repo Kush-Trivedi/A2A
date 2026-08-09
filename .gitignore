@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node / frontend build output
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Runtime
+*.log
+uploads/
+
+# Original source extract — not part of the platform
+AAAS/
+AAAS.zip

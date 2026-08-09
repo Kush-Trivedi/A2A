@@ -1,0 +1,181 @@
+config: {}
+
+server:
+  host: "0.0.0.0"
+  port: 3000
+  reload: false
+
+database:
+  postgres:
+    host: "localhost"
+    dbname: "your_dbname"
+    port: 5432
+    user: "your_username"
+    password: "your_password"
+    timeout: 300
+    auth_mode: "password"
+    pool_size: 10
+    max_overflow: 20
+    ssl_mode: "disable"
+  redis:
+    redis_url: "redis://localhost:6379/0"
+    nonce_backend: "memory"
+
+databricks:
+  host: "localhost"
+  token: "your_token"
+  timeout_seconds: 300
+
+langfuse:
+  host: "localhost"
+  public_key: "your_api_key"
+  secret_key: "your_secret_key"
+
+twilio:
+  account_sid: "your_account_sid"
+  auth_token: "your_auth_token"
+  messaging_service_sid: "your_messaging_service_sid"
+  webhook_base_url: "your_webhook_base_url"
+  timeout_seconds: 30
+  inbound:
+    phone_number: "your_inbound_phone_number"
+  outbound:
+    phone_number: "your_outbound_phone_number"
+  tenant_id: "default"
+  messaging:
+    default_agent: "general"
+    inbound_roles:
+      - "sms_patient"
+    opt_out_keywords: ["stop", "stopall", "unsubscribe", "quit", "optout", "opt out"]
+    opt_in_keywords: ["start", "unstop", "yes start"]
+  voice:
+    machine_detection: "Enable"
+    machine_detection_timeout: 30
+
+google:
+  vertex_ai:
+    project_id: "your_project_id"
+    location: "your_location"
+    voice_generation:
+      model: "your_voice_generation_model"
+      voice_name: "your_voice_name"
+      timeout_seconds: 30
+
+microsoft:
+  entra:
+    oauth_enabled: true
+    jwt_auth_enabled: true
+    tenant_id: "your_tenant_id"
+    client_id: "your_client_id"
+    client_secret: "your_client_secret"
+    redirect_uri: "your_redirect_uri"
+    post_logout_redirect_uri: "your_post_logout_redirect_uri"
+    post_login_redirect_uri: "your_post_login_redirect_uri"
+    scopes: "your_scope"
+    api_audience: "your_api_audience"
+    refresh_token_backend: "your_refresh_token_backend"
+    refresh_token_ttl_seconds: 2592000
+  sharepoint:
+    hostname: "your_sharepoint_hostname"
+    tenant_id: "your_sharepoint_tenant_id"
+    client_id: "your_sharepoint_client_id"
+    client_secret: "your_sharepoint_client_secret"
+  microsoft_teams:
+    outgoing_webhook_secret: "your_outgoing_webhook_secret"
+    agent: "your_agent"
+    agent_timeout_seconds: 30
+    tenant_id: "default"
+    default_roles:
+      - "teams_user"
+  azure:
+    managed_identity_client_id: ""
+    keyvault:
+      keyvault_url: "your_keyvault_url"
+      keyvault_secret_prefix: "your_keyvault_secret_prefix"
+    storage_account:
+      storage_account_url: "your_storage_account_url"
+      storage_container_name: "your_storage_container_name"
+    azure_foundry:
+      base_endpoint: "your_base_endpoint"
+      api_key: "your_api_key"
+      timeout_seconds: 30
+      embedding:
+        deployment_name: "your_deployment_name"
+        api_version: "your_api_version"
+        embedding_dimensions: 3072
+        embedding_batch_size: 50
+      text_completion:
+        deployment_name: "your_text_completion_deployment_name"
+        api_version: "your_text_completion_api_version"
+        max_tokens: 2048
+
+security:
+  entra_authority: "https://login.microsoftonline.com"
+  graph_endpoint: "https://graph.microsoft.com/v1.0"
+  log_identity_claims: false
+  capability_auth_enabled: false
+  identity_claim_names: []
+  field_encryption_key: "your_field_encryption_key"
+  identity_hash_pepper: "your_identity_hash_pepper"
+  session:
+    cookie_name: "ace_session"
+    ttl_seconds: 2592000
+    secret: ""
+    cookie_secure: false
+    cookie_samesite: "lax"
+  cors:
+    allowed_origins:
+      - "http://localhost:5173"
+      - "https://localhost:5173"
+      - "http://localhost:3000"
+    allow_credentials: true
+  trusted_hosts:
+    - "localhost"
+    - "127.0.0.1"
+    - "0.0.0.0"
+  rate_limit:
+    enabled: true
+    requests_per_minute: 30
+    burst: 10
+  limits:
+    max_request_bytes: 10485760
+    gzip_min_bytes: 1000
+
+authorization:
+  rbac_enabled: true
+  rbac_model_path: ""
+  policy_reload_seconds: 300
+  full_access_roles:
+    - "developer"
+
+knowledge:
+  chunking:
+    strategy: "recursive"
+    chunk_size: 1000
+    chunk_overlap: 200
+    chunk_min_size: 128
+    chunk_target_count: 8
+    semantic_breakpoint_percentile: 95
+  retrieval:
+    mode: "hybrid"
+    top_k: 8
+    candidates: 32
+    min_similarity: 0.0
+    rrf_k: 60
+    neighbor_window: 1
+    neighbor_decay: 0.92
+    neighbor_max_window: 3
+    neighbor_score_floor: 0.5
+    context_token_budget: 0
+  access:
+    resource_prefix: "knowledge:"
+    read_action: "read"
+    write_action: "write"
+    upload_source: "upload"
+
+agents:
+  external_paths: []
+  knowledge_agent_sources: []
+  a2a_request_timeout_seconds: 120
+  a2a_streaming_enabled: true
+  card_cache_ttl_seconds: 300

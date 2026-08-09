@@ -1,0 +1,39 @@
+# Team-owned agent manifest — Clinical Care.
+agent:
+  team_key: "clinical_care"
+  agent_key: "sms_outreach"
+  display_name: "SMS Outreach Agent"
+  description: "Sends one-way SMS notifications (reminders, follow-ups) via ACE."
+  version: "0.1.0"
+
+server:
+  host: "0.0.0.0"
+  port: 3700
+
+skills:
+  - id: "send_sms_notification"
+    name: "Send SMS notification"
+    description: "Send a one-way outreach SMS (reminder, follow-up) to a patient."
+    tags: ["sms", "outreach", "notifications"]
+    examples:
+      - "Text +15551234567: your appointment is tomorrow at 9am."
+
+data: {}
+delegations: {}
+
+auth:
+  enabled: false
+  tenant_id: "your_tenant_id"
+  audience: "your_agent_app_id_uri"
+  authority: "https://login.microsoftonline.com"
+  issuer: ""
+  jwks_url: ""
+
+ace:
+  base_url: "http://localhost:3000"
+  public_url: "http://localhost:3700"
+  permission: "chat"
+  allowed_roles:
+    - "developer"
+  retrieval_mode: "sparse"
+  knowledge_sources: []

@@ -1,0 +1,53 @@
+# Team-owned agent manifest — Pay Ops.
+agent:
+  team_key: "pay_ops"
+  agent_key: "insurance"
+  display_name: "Insurance Agent"
+  description: "Verifies coverage, claim eligibility, and appeals for Pay Ops."
+  version: "0.1.0"
+
+server:
+  host: "0.0.0.0"
+  port: 3200
+
+skills:
+  - id: "verify_insurance"
+    name: "Verify insurance"
+    description: "Verify a patient's insurance coverage for a service."
+    tags: ["insurance", "payer", "coverage"]
+    examples:
+      - "Is this cardiology follow-up covered by the patient's plan?"
+  - id: "appeal_claim"
+    name: "Appeal claim"
+    description: "Start an appeal for a denied claim."
+    tags: ["insurance", "appeals"]
+    examples:
+      - "Appeal denial code CO-97 for claim 12345."
+
+# Team-owned data configuration (Pay Ops' own Databricks resources).
+data:
+  databricks:
+    warehouse_id: "your_warehouse_id"
+    catalog: "your_catalog"
+    schema: "your_schema"
+    genie_space_id: "your_genie_space_id"
+
+# No outbound delegations for this agent.
+delegations: {}
+
+auth:
+  enabled: false
+  tenant_id: "your_tenant_id"
+  audience: "your_agent_app_id_uri"
+  authority: "https://login.microsoftonline.com"
+  issuer: ""
+  jwks_url: ""
+
+ace:
+  base_url: "http://localhost:3000"
+  public_url: "http://localhost:3200"
+  permission: "chat"
+  allowed_roles:
+    - "developer"
+  retrieval_mode: "hybrid"
+  knowledge_sources: []

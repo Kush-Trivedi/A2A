@@ -1,0 +1,18 @@
+# ACE control plane — build from the repo root (A2A/):
+#   docker build -f Dockerfile.ace -t ace/control-plane .
+# Root context is required because ACE depends on Agents/agent_kit (path dep).
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+
+WORKDIR /srv
+COPY Agents/agent_kit/ /srv/Agents/agent_kit/
+COPY ACE/pyproject.toml ACE/uv.lock* /srv/ACE/
+COPY ACE/backend/ /srv/ACE/backend/
+
+WORKDIR /srv/ACE
+RUN uv sync --frozen --no-dev || uv sync --no-dev
+
+# ENV selects the yaml (local|dev|uat|prd); credentials come from the yaml /
+# Key Vault lookups — never baked into the image.
+ENV ENV=dev
+EXPOSE 3000
+CMD ["uv", "run", "python", "-m", "backend.app.app"]

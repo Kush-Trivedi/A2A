@@ -1,0 +1,47 @@
+# Team-owned agent manifest — ACE Platform team.
+agent:
+  team_key: "ace_platform"
+  agent_key: "general"
+  display_name: "General Assistant"
+  description: "Answers safe general questions and explains what you can access."
+  version: "0.1.0"
+
+server:
+  host: "0.0.0.0"
+  port: 3300
+
+skills:
+  - id: "general_help"
+    name: "General help"
+    description: "Safe general knowledge and platform guidance."
+    tags: ["general", "help"]
+    examples:
+      - "What can you help me with?"
+  - id: "access_overview"
+    name: "Access overview"
+    description: "List the assistants the current user can access and how to get more."
+    tags: ["access", "roles"]
+    examples:
+      - "What can I access?"
+
+data: {}
+
+delegations: {}
+
+auth:
+  enabled: false
+  tenant_id: "your_tenant_id"
+  audience: "your_agent_app_id_uri"
+  authority: "https://login.microsoftonline.com"
+  issuer: ""
+  jwks_url: ""
+
+ace:
+  base_url: "http://localhost:3000"
+  public_url: "http://localhost:3300"
+  permission: "chat"
+  allowed_roles:
+    - "developer"
+    - "nurse"
+  retrieval_mode: "hybrid"
+  knowledge_sources: []

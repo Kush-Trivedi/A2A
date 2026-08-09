@@ -1,0 +1,87 @@
+# Team-owned agent manifest.
+# The ODT team maintains everything in this file. Common platform concerns
+# (Entra auth, RBAC, sessions, chat) are handled by ACE - never configured here.
+agent:
+  team_key: "clinical_care"
+  agent_key: "scheduling"
+  display_name: "Scheduling Agent"
+  description: "Books, reschedules, and checks patient appointments for Clinical Care."
+  version: "0.2.0"
+
+# Team-owned, versioned prompts. Multiple named prompts per agent version,
+# each with its OWN version — ACE records them per agent version; the agent
+# uses them at runtime from this manifest.
+prompts:
+  booking_ack:
+    version: "1.0.0"
+    content: |
+      [{display_name}] Received scheduling request: {question}. Booking workflow is not implemented in the template yet.
+  delegation_reason:
+    version: "1.0.0"
+    content: |
+      Insurance verification after scheduling.
+
+server:
+  host: "0.0.0.0"
+  port: 3100
+
+skills:
+  - id: "schedule_appointment"
+    name: "Schedule appointment"
+    description: "Book a patient appointment with a provider."
+    tags: ["scheduling", "appointments"]
+    examples:
+      - "Book a cardiology follow-up for next Tuesday morning."
+  - id: "check_availability"
+    name: "Check availability"
+    description: "Check provider or clinic availability windows."
+    tags: ["scheduling", "availability"]
+    examples:
+      - "When is Dr. Patel free this week?"
+
+# Team-owned data configuration. Values the TEAM controls (their Databricks
+# workspace resources, catalogs, Genie space). ACE stores a copy of this in
+# the registry (team_config) at registration time.
+# Team-owned LLM deployment choices. Same shared Foundry base URL (ACE holds
+# it + the key); only the deployment names are yours. Multiple allowed.
+llm:
+  chat: "your_chat_deployment"
+  summarize: "your_summarize_deployment"
+
+data:
+  databricks:
+    warehouse_id: "your_warehouse_id"
+    catalog: "your_catalog"
+    schema: "your_schema"
+    genie_space_id: "your_genie_space_id"
+
+# Cross-team delegations (team-owned). Each entry names a capability this
+# agent hands off to a partner team's agent. The partner's card URL (and
+# audience when their auth is enabled) comes from that team.
+delegations:
+  insurance:
+    card_url: "http://localhost:3200/.well-known/agent-card.json"
+    audience: ""
+
+# Service-plane authentication (team-owned). `enabled` is an explicit switch —
+# set it true and fill tenant_id + audience (your agent's Entra app id URI)
+# when your Entra app registration exists. issuer/jwks_url stay empty for
+# public Entra; they exist for sovereign clouds and test harnesses.
+auth:
+  enabled: false
+  tenant_id: "your_tenant_id"
+  audience: "your_agent_app_id_uri"
+  authority: "https://login.microsoftonline.com"
+  issuer: ""
+  jwks_url: ""
+
+# How this agent reaches the ACE control plane.
+ace:
+  base_url: "http://localhost:3000"
+  # Where this agent is reachable by ACE and by other agents (the AgentCard url).
+  public_url: "http://localhost:3100"
+  permission: "chat"
+  allowed_roles:
+    - "developer"
+  retrieval_mode: "hybrid"
+  knowledge_sources: []

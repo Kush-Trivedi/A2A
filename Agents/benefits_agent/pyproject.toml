@@ -1,0 +1,16 @@
+﻿[project]
+name = "benefits-agent"
+version = "0.1.0"
+description = "HR Benefits agent - answers employee benefits questions over Teams and web chat"
+requires-python = ">=3.13"
+dependencies = [
+    "a2a-sdk[http-server]>=0.2.16",
+    "ace-agent-kit",
+    "httpx>=0.28.1",
+    "pyjwt[crypto]>=2.13.0",
+    "pyyaml>=6.0.3",
+    "uvicorn>=0.52.1",
+]
+
+[tool.uv.sources]
+ace-agent-kit = { path = "../agent_kit", editable = true }

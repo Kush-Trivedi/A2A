@@ -1,0 +1,16 @@
+﻿[project]
+name = "file-upload-agent"
+version = "0.1.0"
+description = "ACE platform file Q&A agent - answers strictly from session-uploaded documents"
+requires-python = ">=3.13"
+dependencies = [
+    "a2a-sdk[http-server]>=0.2.16",
+    "ace-agent-kit",
+    "httpx>=0.28.1",
+    "pyjwt[crypto]>=2.13.0",
+    "pyyaml>=6.0.3",
+    "uvicorn>=0.52.1",
+]
+
+[tool.uv.sources]
+ace-agent-kit = { path = "../agent_kit", editable = true }

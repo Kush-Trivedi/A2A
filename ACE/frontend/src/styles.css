@@ -1,0 +1,49 @@
+* { box-sizing: border-box; margin: 0; }
+body { font-family: "Segoe UI", system-ui, sans-serif; background: #f5f6f8; color: #1a1d21; }
+
+.signin { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 12px; }
+.signin-button { background: #2563eb; color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none; }
+
+.layout { display: grid; grid-template-columns: 260px 1fr auto; height: 100vh; }
+
+.sessions { background: #fff; border-right: 1px solid #e3e6ea; display: flex; flex-direction: column; padding: 12px; gap: 10px; }
+.sessions-header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 14px; }
+.sessions-header button { border: 1px solid #d0d5db; background: #fff; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+.sessions ul { list-style: none; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.sessions li button { width: 100%; text-align: left; border: none; background: transparent; padding: 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.sessions li button:hover { background: #eef1f5; }
+.sessions li button.active { background: #e3ecfd; }
+.agent-picker { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.agent-picker select { padding: 6px; border-radius: 6px; border: 1px solid #d0d5db; }
+
+.chat { display: flex; flex-direction: column; min-width: 0; }
+.thread { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+.empty-state { color: #7a828c; text-align: center; margin-top: 30vh; }
+.bubble { max-width: 720px; padding: 12px 16px; border-radius: 12px; line-height: 1.5; font-size: 14px; }
+.bubble.user { align-self: flex-end; background: #2563eb; color: #fff; }
+.bubble.assistant { align-self: flex-start; background: #fff; border: 1px solid #e3e6ea; }
+.agent-chip { display: inline-block; font-size: 11px; background: #eef1f5; color: #4b5563; border-radius: 10px; padding: 1px 8px; margin-bottom: 6px; }
+
+.composer { display: flex; gap: 8px; padding: 16px 24px; background: #fff; border-top: 1px solid #e3e6ea; }
+.composer textarea { flex: 1; resize: none; height: 56px; padding: 10px; border-radius: 8px; border: 1px solid #d0d5db; font-family: inherit; font-size: 14px; }
+.composer button { background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: 0 20px; cursor: pointer; }
+.composer button:disabled { background: #a5b8e8; cursor: default; }
+
+.canvas { width: 380px; background: #fff; border-left: 1px solid #e3e6ea; overflow-y: auto; padding: 16px; }
+.canvas-header { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 12px; }
+.canvas-close { border: none; background: transparent; cursor: pointer; }
+.canvas-artifact { margin-bottom: 16px; }
+.canvas-artifact h3 { font-size: 14px; margin-bottom: 6px; }
+.canvas-desc { font-size: 12px; color: #6b7280; margin-bottom: 8px; }
+.canvas-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.canvas-table td { border: 1px solid #e3e6ea; padding: 6px 8px; }
+.canvas-key { font-weight: 600; background: #f8fafc; white-space: nowrap; }
+.canvas-sources h4 { font-size: 13px; margin-bottom: 6px; }
+.canvas-sources ul { padding-left: 18px; font-size: 12px; color: #4b5563; }
+
+.refusal-card { background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; padding: 12px; font-size: 14px; }
+.refusal-title { font-weight: 600; color: #9a3412; margin-bottom: 6px; }
+.refusal-contact { display: inline-block; margin-top: 8px; color: #2563eb; }
+
+.upload-button { display: flex; align-items: center; padding: 0 10px; border: 1px solid #d0d5db; border-radius: 8px; cursor: pointer; background: #fff; }
+.upload-button:has(input:disabled) { opacity: 0.45; cursor: default; }

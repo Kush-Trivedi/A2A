@@ -1,0 +1,56 @@
+# Local cloud-parity run: docker compose up --build
+# Same images that ship to Container Apps; agent card URLs use service DNS
+# names (register agents with e.g. http://scheduling:3100/... in this mode).
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "12345678"
+      POSTGRES_DB: postgres
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+
+  ace:
+    build: { context: ., dockerfile: Dockerfile.ace }
+    environment:
+      ENV: local
+      ACE_DB_POSTGRES_HOST: postgres
+      ACE_DB_POSTGRES_USER: postgres
+      ACE_DB_POSTGRES_PASSWORD: "12345678"
+      ACE_DB_POSTGRES_DBNAME: postgres
+    ports: ["3000:3000"]
+    depends_on: [postgres]
+
+  scheduling:
+    build: { context: ./Agents, dockerfile: Dockerfile, args: { AGENT: scheduling_agent } }
+    ports: ["3100:3100"]
+  insurance:
+    build: { context: ./Agents, dockerfile: Dockerfile, args: { AGENT: insurance_agent } }
+    ports: ["3200:3200"]
+  general:
+    build: { context: ./Agents, dockerfile: Dockerfile, args: { AGENT: general_agent } }
+    ports: ["3300:3300"]
+  file-qa:
+    build: { context: ./Agents, dockerfile: Dockerfile, args: { AGENT: file_upload_agent } }
+    ports: ["3400:3400"]
+  sharepoint-qa:
+    build: { context: ./Agents, dockerfile: Dockerfile, args: { AGENT: sharepoint_agent } }
+    ports: ["3500:3500"]
+  blob-qa:
+    build: { context: ./Agents, dockerfile: Dockerfile, args: { AGENT: blob_agent } }
+    ports: ["3600:3600"]
+  sms-outreach:
+    build: { context: ./Agents, dockerfile: Dockerfile, args: { AGENT: sms_outreach_agent } }
+    ports: ["3700:3700"]
+  benefits:
+    build: { context: ./Agents, dockerfile: Dockerfile, args: { AGENT: benefits_agent } }
+    ports: ["3800:3800"]
+
+  frontend:
+    build: ./ACE/frontend
+    ports: ["5173:80"]
+    depends_on: [ace]
+
+volumes:
+  pgdata:
