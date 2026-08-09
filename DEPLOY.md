@@ -6,19 +6,22 @@ Plus: how an ODT team ships a new agent end to end.
 
 ## 0. Where everything lives
 
-All platform code is in **two folders** — `ACE/` (control plane) and
-`Agents/` (independent team agents). The rest is docs + container files.
+Platform code is in **three folders** — `ACE/` (control plane), `Agents/`
+(independent team agents), `agent_kit/` (platform-owned shared package).
+The rest is docs + container files.
 
 ```
 A2A/
 ├── ACE/                     # control plane: backend/app (api, services, security,
 │                            #   entity, dto, config/env/<ENV>.yaml) + frontend SPA
+├── agent_kit/               # shared ace-agent-kit package — editable path dep
+│                            #   installed by ACE and every agent (platform-owned)
 ├── Agents/                  # one uv project per team agent, all owned by the team:
-│   ├── agent_kit/           #   shared ace-agent-kit package (editable dep)
 │   ├── scheduling_agent/    #   :3100   insurance_agent/   :3200   general_agent/ :3300
 │   ├── file_upload_agent/   #   :3400   sharepoint_agent/  :3500   blob_agent/    :3600
 │   ├── sms_outreach_agent/  #   :3700   benefits_agent/    :3800 (Teams opt-in)
 │   └── Dockerfile           #   ONE shared agent image — ARG AGENT picks the folder
+│                            #   (build context = repo root, so the kit is included)
 ├── infra/                   # reference Bicep (main/agent) — OPTIONAL: bring your
 │                            #   own IaC; Foundry model deployments already exist
 ├── docker-compose.yml       # pgvector + ACE + all 8 agents + UI
@@ -83,7 +86,7 @@ az acr create -g ace-rg -n <acr> --sku Basic
 
 # 1) Build + push images (from A2A\)
 az acr build -r <acr> -f Dockerfile.ace -t ace/control-plane:latest .
-az acr build -r <acr> -f Agents/Dockerfile --build-arg AGENT=scheduling_agent -t ace/scheduling-agent:latest Agents
+az acr build -r <acr> -f Agents/Dockerfile --build-arg AGENT=scheduling_agent -t ace/scheduling-agent:latest .
 #   ... repeat the agent line per agent (only AGENT and tag change)
 az acr build -r <acr> -t ace/frontend:latest ACE/frontend
 

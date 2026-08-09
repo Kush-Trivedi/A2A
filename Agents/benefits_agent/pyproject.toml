@@ -1,4 +1,4 @@
-﻿[project]
+[project]
 name = "benefits-agent"
 version = "0.1.0"
 description = "HR Benefits agent - answers employee benefits questions over Teams and web chat"
@@ -13,4 +13,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-ace-agent-kit = { path = "../agent_kit", editable = true }
+ace-agent-kit = { path = "../../agent_kit", editable = true }
