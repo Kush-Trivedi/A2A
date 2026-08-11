@@ -33,7 +33,7 @@ http-server = [
 [[package]]
 name = "ace-agent-kit"
 version = "0.2.0"
-source = { editable = "../../agent_kit" }
+source = { editable = "../../AgentKit" }
 dependencies = [
     { name = "a2a-sdk" },
     { name = "azure-identity" },
@@ -472,7 +472,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "a2a-sdk", extras = ["http-server"], specifier = ">=1.1.2" },
-    { name = "ace-agent-kit", editable = "../../agent_kit" },
+    { name = "ace-agent-kit", editable = "../../AgentKit" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.13.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },

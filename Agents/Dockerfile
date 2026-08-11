@@ -6,9 +6,9 @@ FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 ARG AGENT
 WORKDIR /srv
 
-# Mirror the repo layout so the agents' ../../agent_kit path dependency
+# Mirror the repo layout so the agents' ../../AgentKit path dependency
 # resolves identically on host and in-container.
-COPY agent_kit/ /srv/agent_kit/
+COPY AgentKit/ /srv/AgentKit/
 COPY Agents/${AGENT}/ /srv/Agents/${AGENT}/
 
 WORKDIR /srv/Agents/${AGENT}

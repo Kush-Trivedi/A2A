@@ -32,7 +32,7 @@ SharePoint/Twilio):
 Prereqs: Python 3.13, uv, Node 22, Postgres 17 + pgvector running locally.
 
 ```bash
-cd A2A/agent_kit && uv sync
+cd A2A/AgentKit && uv sync
 cd ../ACE && uv sync
 for a in general_agent file_upload_agent policy_procedure_agent \
          econsult_agent sms_agent benefits_agent gda_agent; do

@@ -1,10 +1,11 @@
 # ACE control plane — build from the repo root (A2A/):
 #   docker build -f Dockerfile.ace -t ace/control-plane .
-# Root context is required because ACE depends on Agents/agent_kit (path dep).
+# Root context is required because ACE depends on ../AgentKit (path dep) —
+# the image mirrors the repo layout so the relative path resolves identically.
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
 WORKDIR /srv
-COPY Agents/agent_kit/ /srv/Agents/agent_kit/
+COPY AgentKit/ /srv/AgentKit/
 COPY ACE/pyproject.toml ACE/uv.lock* /srv/ACE/
 COPY ACE/backend/ /srv/ACE/backend/
 

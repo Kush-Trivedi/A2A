@@ -21,4 +21,4 @@ dependencies = [
 #   url = "https://pkgs.dev.azure.com/<org>/_packaging/<feed>/pypi/simple/"
 #
 [tool.uv.sources]
-ace-agent-kit = { path = "../../agent_kit", editable = true }
+ace-agent-kit = { path = "../../AgentKit", editable = true }

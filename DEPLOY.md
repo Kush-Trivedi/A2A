@@ -7,14 +7,14 @@ Plus: how an ODT team ships a new agent end to end.
 ## 0. Where everything lives
 
 Platform code is in **three folders** — `ACE/` (control plane), `Agents/`
-(independent team agents), `agent_kit/` (platform-owned shared package).
+(independent team agents), `AgentKit/` (platform-owned shared package).
 The rest is docs + container files.
 
 ```
 A2A/
 ├── ACE/                     # control plane: backend/app (api, services, security,
 │                            #   entity, dto, config/env/<ENV>.yaml) + frontend SPA
-├── agent_kit/               # shared ace-agent-kit package — editable path dep
+├── AgentKit/               # shared ace-agent-kit package — editable path dep
 │                            #   installed by ACE and every agent (platform-owned)
 ├── Agents/                  # one uv project per team agent, all owned by the team:
 │   ├── scheduling_agent/    #   :3100   insurance_agent/   :3200   general_agent/ :3300

@@ -29,7 +29,7 @@ wheels = [
 [[package]]
 name = "ace-agent-kit"
 version = "0.2.0"
-source = { editable = "../agent_kit" }
+source = { editable = "../AgentKit" }
 dependencies = [
     { name = "a2a-sdk" },
     { name = "azure-identity" },
@@ -83,7 +83,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "a2a-sdk", specifier = ">=1.1.2" },
-    { name = "ace-agent-kit", editable = "../agent_kit" },
+    { name = "ace-agent-kit", editable = "../AgentKit" },
     { name = "asyncpg", specifier = ">=0.31.0" },
     { name = "azure-core", specifier = ">=1.41.0" },
     { name = "azure-identity", specifier = ">=1.25.3" },

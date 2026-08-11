@@ -15,7 +15,7 @@ Run & team deploy guide: `DEPLOY.md`
 ## Layout
 
 Platform code lives in three folders: `ACE/` (control plane), `Agents/`
-(independent team agents), and `agent_kit/` (the platform-owned shared
+(independent team agents), and `AgentKit/` (the platform-owned shared
 package both sides install). Everything else at the root is docs, container
 files, and optional reference infra.
 
@@ -32,7 +32,7 @@ A2A/
 │   │   └── database/ llm/ prompts/ observability/ scripts/ utils/
 │   ├── frontend/               # chat + canvas SPA (Vite :5173, proxies /api → :3000)
 │   └── pyproject.toml · uv.lock
-├── agent_kit/                  # PLATFORM-OWNED shared ace-agent-kit package:
+├── AgentKit/                  # PLATFORM-OWNED shared ace-agent-kit package:
 │                               #   ContextEnvelope, AgentDelegator, AceCapabilityClient,
 │                               #   PromptStore — editable path dep of ACE + every agent
 ├── Agents/                     # TEAM-OWNED, independent A2A services (uv project each)
@@ -94,15 +94,15 @@ latest releases. Each `uv add` is one line: copy, paste, done.
 ```powershell
 # ── ACE control plane ──────────────────────────────────────────  (A2A\ACE)
 uv init --python 3.13
-uv add --editable ..\agent_kit
+uv add --editable ..\AgentKit
 uv add a2a-sdk asyncpg azure-core azure-identity azure-keyvault-secrets azure-storage-blob casbin casbin-async-sqlalchemy-adapter databricks-sdk fastapi httpx itsdangerous "markitdown[all]" openai "pyjwt[crypto]" python-json-logger python-multipart pyyaml requests rich "sqlalchemy[asyncio]" sqlmodel tiktoken twilio "uvicorn[standard]"
 
 # ── Any team agent ─────────────────────────────  (A2A\Agents\<your_agent>)
 uv init --python 3.13
-uv add --editable ..\..\agent_kit
+uv add --editable ..\..\AgentKit
 uv add "a2a-sdk[http-server]" httpx "pyjwt[crypto]" pyyaml uvicorn
 
-# ── Shared kit (only if rebuilding it) ─────────────────  (A2A\agent_kit)
+# ── Shared kit (only if rebuilding it) ─────────────────  (A2A\AgentKit)
 uv init --lib --python 3.13
 uv add a2a-sdk httpx
 

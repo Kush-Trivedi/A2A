@@ -13,7 +13,7 @@ the monorepo.
    - upload: `https://pkgs.dev.azure.com/<org>/_packaging/ace-packages/pypi/upload/`
    - simple: `https://pkgs.dev.azure.com/<org>/_packaging/ace-packages/pypi/simple/`
 
-## Manual publish (from agent_kit/)
+## Manual publish (from AgentKit/)
 
 ```powershell
 uv build                                     # builds sdist + wheel into dist/
@@ -31,10 +31,10 @@ steps:
   - task: UsePythonVersion@0
     inputs: { versionSpec: "3.13" }
   - script: pip install uv && uv build
-    workingDirectory: agent_kit
+    workingDirectory: AgentKit
   - task: TwineAuthenticate@1
     inputs: { artifactFeed: "ace-packages" }
-  - script: pip install twine && twine upload -r ace-packages --config-file $(PYPIRC_PATH) agent_kit/dist/*
+  - script: pip install twine && twine upload -r ace-packages --config-file $(PYPIRC_PATH) AgentKit/dist/*
 ```
 
 ## Rules
