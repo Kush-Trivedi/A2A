@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-
 from ...utils.common.logger import Logger
 from .registry_service import AgentRegistryService, get_agent_registry_service
 
@@ -18,13 +17,6 @@ class CapabilityMatch:
 
 
 class CapabilityResolver:
-    """Answers "which team's agent provides this capability?" over the registry.
-
-    Matching is deterministic, most-specific first: exact skill id, then exact
-    skill tag, then exact agent key/alias. Skills come from the validated card
-    snapshots stored at registration.
-    """
-
     def __init__(self, registry_service: AgentRegistryService | None = None) -> None:
         self._registry = registry_service or get_agent_registry_service()
 

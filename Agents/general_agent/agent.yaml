@@ -26,12 +26,23 @@ skills:
 
 data: {}
 
+llm:
+  default: "general_chat"
+  deployments:
+    general_chat: "gpt-5-chat"
+
+prompts:
+  system:
+    version: "1.0.0"
+    content: |
+      You are a helpful general assistant. Answer questions safely and provide guidance on what the user can access.
+
 delegations: {}
 
 auth:
   enabled: false
-  tenant_id: "your_tenant_id"
-  audience: "your_agent_app_id_uri"
+  tenant_id: ""
+  audience: ""
   authority: "https://login.microsoftonline.com"
   issuer: ""
   jwks_url: ""
@@ -42,6 +53,5 @@ ace:
   permission: "chat"
   allowed_roles:
     - "developer"
-    - "nurse"
   retrieval_mode: "hybrid"
   knowledge_sources: []

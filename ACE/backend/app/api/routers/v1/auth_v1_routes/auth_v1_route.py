@@ -205,6 +205,16 @@ async def oauth_callback(
     redirect.delete_cookie(state_mgr.cookie_name, path="/")
     return redirect
 
+
+oauth_compact_router = APIRouter(tags=["Auth"])
+oauth_compact_router.add_api_route(
+    "api/auth/callback/microsoft",
+    oauth_callback,
+    methods=["GET"],
+    name="auth_callback_microsoft",
+)
+
+
 @auth_v1_router.get("/me", name="auth_me", response_model=ApiEnvelope[MeResponse])
 async def me(
         context: SessionContext = Depends(get_current_context),

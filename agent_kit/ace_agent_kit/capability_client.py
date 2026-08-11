@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import json
 from typing import Any
 
 import httpx
@@ -28,13 +29,6 @@ class AccessibleAgent:
 
 
 class AceCapabilityClient:
-    """Team agents' gateway to ACE capabilities (retrieve, catalog).
-
-    Always sends the ContextEnvelope so ACE enforces the CALLER's roles per
-    knowledge source. Sends a service bearer when a token provider and
-    audience are configured (required once ACE capability auth is enabled).
-    """
-
     def __init__(
         self,
         *,
@@ -95,8 +89,6 @@ class AceCapabilityClient:
         deployment: str,
         messages: list[dict[str, str]],
     ) -> str:
-        """Chat completion via ACE using one of THIS team's registered
-        deployments — ACE validates the deployment and holds the API key."""
         data = await self._post(
             "/api/v1/capability/llm/chat",
             {
@@ -108,6 +100,40 @@ class AceCapabilityClient:
         )
         return str(data.get("text", ""))
 
+    async def llm_chat_stream(
+      self,
+      *,
+      envelope: ContextEnvelope,
+      agent_key: str,
+      deployment: str,
+      messages: list[dict[str, str]],
+    ):
+        payload = {
+            "envelope": envelope.to_payload(),
+            "agent_key": agent_key,
+            "deployment": deployment,
+            "messages": messages,
+        }
+        async with httpx.AsyncClient(
+            base_url=self._base_url, timeout=self._timeout_seconds
+        ) as client:
+            async with client.stream(
+                "POST", 
+                "/api/v1/capability/llm/chat/stream", 
+                json=payload,
+                headers={**await self._headers(), "Accept": "text/event-stream"}
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    event = json.loads(line[5:].strip())
+                    if event.get("done"):
+                        return
+                    token = str(event.get("text", ""))
+                    if token:
+                        yield token
+
     async def sms_send(
         self,
         *,
@@ -116,8 +142,6 @@ class AceCapabilityClient:
         to_number: str,
         body: str,
     ) -> str:
-        """Outreach SMS via ACE — Twilio credentials never leave ACE;
-        opt-outs are enforced centrally."""
         data = await self._post(
             "/api/v1/capability/sms/send",
             {

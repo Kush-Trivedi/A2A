@@ -7,14 +7,6 @@ CONTEXT_NAMESPACE = "ace.context/v1"
 
 @dataclass(frozen=True)
 class ContextEnvelope:
-    """The identity/context contract that travels with every A2A hop.
-
-    The service bearer token proves WHICH service is calling; this envelope
-    says ON WHOSE BEHALF. Every hop must forward it; delegating agents stamp
-    `delegated_from`/`delegation_reason` and add the upstream task id to the
-    message's referenceTaskIds so the chain stays auditable end to end.
-    """
-
     tenant_id: str
     actor_id: str
     user_id: str = ""

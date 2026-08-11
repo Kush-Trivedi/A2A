@@ -35,7 +35,7 @@ class EditMessageRequest(StrictBaseModel):
     content: str = Field(..., min_length=1, max_length=8000)
 
 class MessageFeedbackRequest(StrictBaseModel):
-    feedback: str = Field(..., min_length=1, max_length=32)
+    feedback: str = Field(default=None, min_length=1, max_length=32)
 
 class MessageFeedbackResponse(StrictBaseModel):
     message_id: str

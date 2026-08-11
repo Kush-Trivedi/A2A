@@ -292,9 +292,11 @@ class ConversationStore:
                         id=original_version_id,
                         chain_id=chain_id,
                         version_number=1,
-                        user_message_id=target.id,
-                        assistant_message_id=(
-                            original_assistant.id if original_assistant is not None else None
+                        user_message=target.content,
+                        assistant_message=(
+                            original_assistant.content
+                            if original_assistant is not None 
+                            else None
                         ),
                         created_at=now,
                     )

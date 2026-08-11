@@ -18,4 +18,7 @@ class UserEntraGroupAssignmentEntity(CreatedAtModel, table=True):
     tenant_id: str = Field(sa_column=Column(Text, nullable=False))
     user_id: str = Field(sa_column=Column(Text, nullable=False))
     group_id: str = Field(sa_column=Column(Text, nullable=False))
-    status: str = Field(default="entra_id_token", sa_column=Column(Text, nullable=False, default="entra_id_token"))
+    source: str = Field(
+        default="entra_id_token", 
+        sa_column=Column(Text, nullable=False, default="entra_id_token")
+    )

@@ -21,8 +21,6 @@ BearerTokenProvider = Callable[[str], Awaitable[str | None]]
 
 @dataclass(frozen=True)
 class DelegationTarget:
-    """A partner agent this team delegates a capability to (team-owned config)."""
-
     capability: str
     card_url: str
     audience: str = ""
@@ -49,14 +47,6 @@ class _DelegationCredentialService(CredentialService):
 
 
 class AgentDelegator:
-    """Cross-team A2A calls with mandatory context forwarding.
-
-    The delegating agent MUST pass the envelope it received (stamped via
-    `with_delegation`) and the upstream task id — that is what keeps the
-    chain auditable. `bearer_token_provider` supplies service tokens when the
-    partner's card declares security.
-    """
-
     def __init__(
         self,
         *,

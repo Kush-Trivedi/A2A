@@ -18,6 +18,26 @@ _SCHEMA_UPGRADE_SQL: tuple[str, ...] = (
     "ALTER TABLE registered_agents ADD COLUMN IF NOT EXISTS prompts jsonb NOT NULL DEFAULT '{}'::jsonb",
     "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS actor_id text",
     "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()",
+    """
+    DO $$
+    BEGIN
+        IF EXISTS(
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public'
+            AND table_name = 'user_entra_group_assignments'
+            AND column_name = 'status'
+        ) AND NOT EXISTS(
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public'
+            AND table_name = 'user_entra_group_assignments'
+            AND column_name = 'source'
+        )
+        THEN
+            ALTER TABLE user_entra_group_assignments RENAME COLUMN IF EXISTS status TO source;
+        END IF;
+    END
+    $$;
+    """
 )
 
 

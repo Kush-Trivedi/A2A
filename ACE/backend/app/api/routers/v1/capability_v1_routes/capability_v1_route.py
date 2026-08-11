@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
+import json
 
 from ace_agent_kit import ContextEnvelope
 
@@ -41,8 +43,6 @@ async def require_service_auth(request: Request) -> None:
 
 
 class EnvelopeContextMapper:
-    """Builds a SessionContext from a service-plane envelope (no browser session)."""
-
     @staticmethod
     def to_context(envelope: CapabilityEnvelopeModel) -> SessionContext:
         now = datetime.now(timezone.utc)
@@ -73,7 +73,6 @@ async def retrieve_knowledge(
 ) -> ApiEnvelope[CapabilityRetrieveResponse]:
     gateway: KnowledgeGateway = get_knowledge_gateway()
     context = EnvelopeContextMapper.to_context(body.envelope)
-    # Sparse retrieval is lexical-only — no embedding call needed.
     vector = (
         [] if body.retrieval_mode == "sparse" else await embedding.embed_query(body.query)
     )
@@ -129,6 +128,38 @@ async def llm_chat(
     )
     return ApiEnvelope(
         data=CapabilityLlmChatResponse(text=text, deployment=body.deployment)
+    )
+
+
+@capability_v1_router.post(
+    "/llm/chat/stream",
+    dependencies=[Depends(require_service_auth)],
+)
+async def stream_llm_chat(body: CapabilityLlmChatRequest) -> StreamingResponse:
+    service: LlmGatewayService = get_llm_gateway_service()
+    envelope = ContextEnvelope(
+        tenant_id=body.envelope.tenant_id,
+        actor_id=body.envelope.actor_id,
+        user_id=body.envelope.user_id,
+        roles=tuple(body.envelope.roles),
+        correlation_id=body.envelope.correlation_id,
+        chat_session_id=body.envelope.chat_session_id,
+    )
+
+    async def events():
+        async for token in service.stream_chat(
+            envelope=envelope,
+            agent_key=body.agent_key,
+            deployment=body.deployment,
+            messages=[m.model_dump() for m in body.messages],
+        ):
+            yield f"data: {json.dumps({'text': token})}\n\n"
+        yield "data: {\"done\": true}\n\n"
+
+    return StreamingResponse(
+        events(), \
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     )
 
 

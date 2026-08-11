@@ -4,7 +4,6 @@ from ...security.authorization.context_attrs import AuthorizationContextBuilder
 from ...security.authorization.enforcer import CasbinEnforcer, get_casbin_enforcer
 from ...security.session import SessionContext
 from ...utils.common.logger import Logger
-from .agent_registry import AgentRegistry, get_agent_registry
 from .registry_service import AgentRegistryService, get_agent_registry_service
 
 logger = Logger(__name__).get_logger()
@@ -20,35 +19,16 @@ class CatalogAgent:
 
 
 class AgentCatalogService:
-    """The role-scoped agent list a logged-in user may talk to.
-
-    RBAC pre-filters the catalog BEFORE anything reaches the UI or routing —
-    users only ever see agents their roles permit (built-in definitions plus
-    active registered A2A agents).
-    """
-
     def __init__(
         self,
-        builtin_registry: AgentRegistry | None = None,
         registry_service: AgentRegistryService | None = None,
         enforcer: CasbinEnforcer | None = None,
     ) -> None:
-        self._builtin = builtin_registry or get_agent_registry()
         self._registry = registry_service or get_agent_registry_service()
         self._enforcer = enforcer or get_casbin_enforcer()
 
     async def list_for(self, context: SessionContext) -> list[CatalogAgent]:
         catalog: list[CatalogAgent] = []
-
-        for definition in self._builtin.list():
-            if await self._allowed(context, definition.id, definition.permission):
-                catalog.append(
-                    CatalogAgent(
-                        id=definition.id,
-                        display_name=definition.display_name,
-                        description=definition.description,
-                    )
-                )
 
         pairs = await self._registry.list_active_agents_with_teams(
             tenant_id=context.tenant_id

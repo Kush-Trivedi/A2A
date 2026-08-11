@@ -5,6 +5,10 @@ from starlette.responses import JSONResponse, Response
 
 _RequestResponseCall = Callable[[Request], Awaitable[Response]]
 
+class _BodyTooLarge(Exception):
+    """Internal signal raised when a streamed body exceeds the configured cap."""
+    
+
 class BodySizeLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, max_bytes: int) -> None:
         super().__init__(app)

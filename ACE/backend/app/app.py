@@ -1,11 +1,12 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .api import health_check_router, register_exception_handlers, v1_router
+from .api import health_check_router, oauth_compact_router, register_exception_handlers, v1_router
 from .config.application_context import get_application_context
 from .config.settings_validator import get_settings_validator
 from .database.rdbms.pg_session import dispose_postgres
@@ -17,6 +18,7 @@ from .security import (
     get_auth_settings,
 )
 from .security.authorization import get_casbin_enforcer
+from .services.agents.bootstrap_service import get_agent_bootstrap_service
 from .utils.common.log_redaction import install_log_redaction
 from .utils.common.logger import Logger
 
@@ -45,10 +47,23 @@ class ApplicationFactory:
             logger.info("Application startup: initializing database + authz")
             await initialize_database_lifecycle()
             await self._enforcer.initialize()
+            bootstrap = get_agent_bootstrap_service()
+            bootstrap_task = (
+                asyncio.create_task(
+                    bootstrap.reconcile_until_ready(),
+                    name="agent-registry-bootstrap"
+                )
+                if bootstrap.configured
+                else None
+            )
             try:
                 yield
             finally:
                 logger.info("Application shutdown: releasing resources")
+                if bootstrap_task is not None:
+                    bootstrap_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await bootstrap_task
                 await self._enforcer.close()
                 await dispose_postgres()
 
@@ -93,6 +108,7 @@ class ApplicationFactory:
 
         app.include_router(health_check_router)
         app.include_router(v1_router)
+        app.include_router(oauth_compact_router)
 
         return app
 

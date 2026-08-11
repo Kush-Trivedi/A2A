@@ -1,4 +1,5 @@
 from ace_agent_kit import ContextEnvelope
+from collections.abc import AsyncIterator
 
 from ...config.application_context import get_application_context
 from ...config.settings_validator import PlaceholderPolicy
@@ -64,21 +65,41 @@ class LlmGatewayService:
         deployment: str,
         messages: list[dict[str, str]],
     ) -> str:
+        parts: list[str] = []
+        async for token in self.stream_chat(
+            envelope=envelope,
+            agent_key=agent_key,
+            deployment=deployment,
+            messages=messages,
+        ):
+            parts.append(token)
+        return "".join(parts).strip()
+
+    async def stream_chat(
+            self,
+            *,
+            envelope: ContextEnvelope,
+            agent_key: str,
+            deployment: str,
+            messages: list[dict[str, str]],
+    ) -> AsyncIterator[str]:
         normalized = (deployment or "").strip()
         if not normalized:
-            raise ValidationError("deployment is required.")
+            raise ValidationError("Deployment cannot be empty.")
         if not messages:
-            raise ValidationError("messages must not be empty.")
+            raise ValidationError("Messages cannot be empty.")
 
         team_key = await self._ensure_deployment_registered(
-            tenant_id=envelope.tenant_id, agent_key=agent_key, deployment=normalized
+            tenant_id=envelope.tenant_id,
+            agent_key=agent_key,
+            deployment=normalized,
         )
         self._ensure_foundry_configured()
 
-        parts: list[str] = []
+        answer_char = 0
         async for token in self._llm.astream_chat(messages=messages, model=normalized):
-            parts.append(token)
-        answer = "".join(parts).strip()
+            answer_char += len(token)
+            yield token
 
         logger.info(
             "LLM call metered",
@@ -89,10 +110,10 @@ class LlmGatewayService:
                 "tenant_id": envelope.tenant_id,
                 "actor_id": envelope.actor_id,
                 "prompt_messages": len(messages),
-                "answer_chars": len(answer),
-            },
+                "answer_char": answer_char,
+            }
         )
-        return answer
+        
 
 
 _service: LlmGatewayService | None = None

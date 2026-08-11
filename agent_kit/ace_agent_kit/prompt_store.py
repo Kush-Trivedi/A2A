@@ -18,14 +18,6 @@ class PromptDefinition:
 
 
 class PromptStore:
-    """Team-owned, versioned prompts from the agent's own manifest.
-
-    One agent version carries multiple named prompts, each with its own
-    version — like API versions. Teams author them in agent.yaml; ACE only
-    records them per agent version for governance. The agent uses them at
-    runtime from its own manifest — never fetched from ACE.
-    """
-
     def __init__(self, prompts: Mapping[str, PromptDefinition]) -> None:
         self._prompts = dict(prompts)
 

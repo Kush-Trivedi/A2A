@@ -67,7 +67,6 @@ def _build_default_registry() -> AgentRegistry:
             display_name="Ace Assistant",
             description="General-purpose assistant with access to your uploads.",
             aliases=("ace", "assistant", "orchestrator", "chat"),
-            prompt_name="agent.default.system",
             include_session_uploads=True,
         )
     )

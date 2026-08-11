@@ -8,7 +8,7 @@ from ...security.authorization.enforcer import CasbinEnforcer, get_casbin_enforc
 from ...security.authorization.context_attrs import AuthorizationContextBuilder
 from ...security.session import SessionContext
 from ...utils.common.logger import Logger
-from ...utils.errors import AppError, BadRequestError, LLMError, PermissionDeniedError
+from ...utils.errors import AppError, BadRequestError, NotFoundError, LLMError, PermissionDeniedError
 from ace_agent_kit import ContextEnvelope
 
 from ..a2a import A2AClientService, A2AStreamEvent, get_a2a_client_service
@@ -280,8 +280,6 @@ class ConversationService:
         )
 
         if refusal is not None or card_url:
-            # Refused turns generate nothing; remote A2A agents own their
-            # retrieval and prompting.
             messages, sources = [], []
         else:
             messages, sources = await self._build_generation(
@@ -304,26 +302,34 @@ class ConversationService:
         self, *, context: SessionContext, agent_id: str | None
     ) -> tuple[AgentDefinition, str | None, str | None]:
         """Registered A2A agents take precedence over built-in definitions."""
-        if agent_id:
-            registered = await self._registry_service.find_active_agent(
-                tenant_id=context.tenant_id, key=agent_id
+        requested = (agent_id or "").strip()
+        if not requested:
+            raise BadRequestError("Select an available assistant before sending a message.")
+
+        registered = await self._registry_service.find_active_agent(
+            tenant_id=context.tenant_id, key=requested
+        )
+
+        if registered is None or not registered.card_url:
+            raise NotFoundError(
+                "Agent not found or missing card URL.",
+                details={"requested_agent_id": requested or None}
             )
-            if registered is not None and registered.card_url:
-                definition = AgentDefinition(
-                    id=registered.agent_key,
-                    display_name=registered.display_name,
-                    description=registered.description,
-                    aliases=tuple(registered.aliases or []),
-                    knowledge_sources=tuple(registered.knowledge_sources or []),
-                    include_session_uploads=False,
-                    permission=registered.permission,
-                    retrieval_mode=registered.retrieval_mode,
-                )
-                auth_audience = str(
-                    (registered.team_config or {}).get("auth_audience") or ""
-                ) or None
-                return definition, registered.card_url, auth_audience
-        return self._registry.resolve(agent_id), None, None
+
+        defination = AgentDefinition(
+            id=registered.agent_key,
+            display_name=registered.display_name,
+            description=registered.description,
+            aliases=tuple(registered.aliases or []),
+            knowledge_sources=tuple(registered.knowledge_sources or []),
+            include_session_uploads=False,
+            permission=registered.permission,
+            retrieval_mode=registered.retrieval_mode,
+        )
+        auth_audience = str(
+            (registered.team_config or {}).get("auth_audience") or ""
+        ) or None
+        return defination, registered.card_url, auth_audience
 
     async def _check_agent_permission(
         self, *, context: SessionContext, agent: AgentDefinition
@@ -373,35 +379,42 @@ class ConversationService:
         edited = await self._store.edit_user_message(
             context=context, session_id=session_id, message_id=message_id, content=question,
         )
-        agent = self._registry.resolve(edited.previous_agent_id)
-        await self._check_agent_permission(context=context, agent=agent)
-
-        active = await self._store.list_messages(context=context, session_id=session_id)
-        history = active[:-1]  # everything except the edited message we just inserted
-
-        messages, sources = await self._build_generation(
-            context=context, agent=agent, history=history,
-            question=question, session_id=session_id,
+        agent, card_url, auth_audience = self._registry.resolve(
+            context=context, agent_id=edited.previous_agent_id
         )
+        await self._check_agent_permission(context=context, agent=agent)
 
         answer_parts: list[str] = []
         try:
-            async for token in self._llm.astream_chat(messages=messages):
-                answer_parts.append(token)
-        except Exception as exc:  # noqa: BLE001
+            prepared = self._PreparedTurn(
+                session_id=session_id,
+                user_message_id=edited.new_message.id,
+                agent=agent,
+                messages=[],
+                sources=[],
+                question=question,
+                card_url=card_url,
+                auth_audience=auth_audience,
+            )
+            async for event in self._a2a_events(context=context, prepared=prepared):
+                if event.kind == "text" and event.text:
+                    answer_parts.append(event.text)
+        except AppError:
+            raise
+        except Exception as exc:
             raise LLMError(cause=exc) from exc
 
         answer = "".join(answer_parts).strip()
         assistant = await self._persist_answer(
             context=context, session_id=session_id, agent=agent,
-            answer=answer, sources=sources,
+            answer=answer, sources=[]
         )
         await self._store.link_edit_version_assistant(
             version_id=edited.new_message.edit_version_id, assistant_message_id=assistant.id,
         )
         return ChatTurnResult(
-            session_id=session_id, message_id=assistant.id,
-            answer=answer, sources=sources, agent_id=agent.id,
+            session_id=session_id, message_id=assistant.id, answer=answer,
+            sources=[], agent_id=agent.id,
         )
 
     async def set_feedback(

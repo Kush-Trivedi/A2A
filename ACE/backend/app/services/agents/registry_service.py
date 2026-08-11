@@ -1,7 +1,6 @@
 import uuid
-from datetime import datetime, timezone
-
 from sqlmodel import select
+from datetime import datetime, timezone
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ...database.rdbms.pg_session import get_postgres_connector
@@ -28,13 +27,6 @@ def _now() -> datetime:
 
 
 class AgentRegistryService:
-    """Tracks ODT teams and their agents in Postgres.
-
-    Registration is the automation point: one call stores the agent row and
-    seeds the Casbin policies that let the requested roles reach the agent —
-    no manual policy work for the owning team.
-    """
-
     def __init__(
         self,
         enforcer: CasbinEnforcer | None = None,
@@ -229,7 +221,6 @@ class AgentRegistryService:
 
     @staticmethod
     async def _record_version(session, agent: RegisteredAgentEntity) -> None:
-        """Write the immutable version snapshot; newest becomes current."""
         now = _now()
         demote = (
             pg_insert(AgentVersionEntity)
@@ -311,7 +302,6 @@ class AgentRegistryService:
     async def activate_version(
         self, *, context: SessionContext, agent_key: str, version: str
     ) -> RegisteredAgentEntity:
-        """Roll the agent back/forward to a stored version snapshot."""
         try:
             async with self._connector.session() as session:
                 snapshot = (
@@ -415,7 +405,6 @@ class AgentRegistryService:
     async def find_active_agent(
         self, *, tenant_id: str, key: str
     ) -> RegisteredAgentEntity | None:
-        """Resolve an ACTIVE registered agent by agent_key or alias."""
         normalized = (key or "").strip().lower()
         if not normalized:
             return None
@@ -488,7 +477,6 @@ class AgentRegistryService:
             raise DatabaseError(cause=exc) from exc
 
     async def list_active_agent_cards(self) -> list[tuple[str, str]]:
-        """Platform-scope: (agent_key, card_url) for every active agent with a card."""
         try:
             async with self._connector.session() as session:
                 rows = await session.exec(
@@ -498,7 +486,7 @@ class AgentRegistryService:
                     )
                     .where(
                         RegisteredAgentEntity.status == AgentStatus.ACTIVE,
-                        RegisteredAgentEntity.card_url.is_not(None),  # type: ignore[union-attr]
+                        RegisteredAgentEntity.card_url.is_not(None),
                     )
                     .order_by(RegisteredAgentEntity.agent_key)
                 )

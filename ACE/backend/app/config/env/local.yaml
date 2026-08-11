@@ -179,3 +179,6 @@ agents:
   a2a_request_timeout_seconds: 120
   a2a_streaming_enabled: true
   card_cache_ttl_seconds: 300
+  bootstrap_retry_seconds: 5
+  bootstrap:
+    - manifest_path: "../Agents/general_agent/agent.yaml"

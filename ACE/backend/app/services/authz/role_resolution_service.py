@@ -89,7 +89,9 @@ class RoleResolutionService:
                 role_key=app_role,
                 enabled=True,
                 description=ENTRA_MAPPING_DESCRIPTION,
-            ).on_conflict_do_nothing(constraint="uq_entra_role_mappings_claim_role")
+            ).on_conflict_do_nothing(
+                index_elements=["tenant_id", "claim_type", "claim_value", "role_key"]
+            )
             await session.exec(mapping_stmt)
 
         await session.flush()
