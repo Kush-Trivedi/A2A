@@ -150,24 +150,72 @@ Hand Hygiene Policy text. Ends `CONSULT_E2E_DONE`.
 | Policies added by a script not honored by running ACE | server's Casbin loaded at startup | `POST /api/v1/admin/policies/reload` or restart ACE (auto-reload every 300s). |
 | Port busy on restart | old process holding it | `lsof -ti:3000 \| xargs kill -9` (any port). |
 
-## 9. The ONE open item: Entra login from the UI
+## 9. Credential swap — local.yaml FIRST, then lookup: for dev/uat/prd
 
-Everything above runs with auth placeholders. The UI (`cd ACE/frontend &&
-npm run dev` → :5173) needs a real Entra login to obtain a session — that
-path is implemented but never exercised with live creds.
+The parity rule: real creds go into `ACE/backend/app/config/env/local.yaml`
+(and the agents' `config/env/local.yaml`) as PLAIN VALUES and everything is
+tested on the laptop. dev/uat/prd carry the SAME KEYS with `lookup:<secret-
+name>` values resolved from Key Vault. One code path — never a code change.
 
-To go live: fill `microsoft.entra.*` in ACE env yaml (+ redirect URI
-`http://localhost:3000/api/v1/auth/callback` in the app registration), and
-Foundry `azure_foundry.base_endpoint/api_key` for streamed LLM answers.
-**Yaml values only — if anything beyond the Entra UI login itself fails,
-suspect config before code.** If Entra login DOES fail (redirect loop, token
-rejection, session not set), that is the one area where a code fix may be
-justified — collect: browser network trace of /auth/login → /auth/callback,
-ACE log lines, and the exact Entra app registration settings.
+### 9.1 ACE `config/env/local.yaml` — keys to fill
 
-After login works, repeat §5's questions through the UI with the assistant
-picker on "Auto" — same expectations, plus token streaming and one-tap
-disambiguation chips when two agents are close.
+| Key | Value |
+|---|---|
+| `microsoft.entra.tenant_id / client_id / client_secret` | from the Entra app registration |
+| `microsoft.entra.redirect_uri` | `http://localhost:3000/api/v1/auth/callback` (must ALSO be registered on the Entra app) |
+| `microsoft.entra.post_login_redirect_uri` | `http://localhost:5173` |
+| `microsoft.entra.post_logout_redirect_uri` | `http://localhost:5173` |
+| `microsoft.entra.scopes / api_audience` | per the app registration |
+| `microsoft.azure.azure_foundry.base_endpoint / api_key` | the ONE shared Foundry credential |
+| `microsoft.azure.azure_foundry.embedding.deployment_name / api_version` | real embedding deployment |
+| `microsoft.azure.azure_foundry.text_completion.deployment_name / api_version` | real chat deployment |
+| `security.field_encryption_key` | generate: `python -c "import secrets;print(secrets.token_urlsafe(32))"` |
+| `security.identity_hash_pepper` | generate likewise |
+| `twilio.*` | only if testing SMS (platform inbound number) |
+
+NOT in ACE yaml anymore (by design): databricks, sharepoint, storage — those
+are team CONNECTIONS (`POST /api/v1/connections`, §7 of DEPLOY.md).
+
+### 9.2 Each agent's `config/env/local.yaml` — keys to fill
+
+| Key | Value |
+|---|---|
+| `ace.registration_token` | reissue via `testing/seed_teams_tokens.py` (tokens in git are placeholders) |
+| `llm.deployments.chat` | the team's REAL Foundry deployment name (names only — key stays in ACE) |
+| `retrieval.mode` | flip `sparse` → `hybrid` once embeddings work |
+| `channels.teams.webhook_secret` | only for Teams-enabled agents (benefits) |
+| `auth.*` | keep `enabled: false` locally until service-plane Entra apps exist per team |
+
+### 9.3 What CHANGES once creds are in (verify these)
+
+- Startup validator placeholder warnings disappear for the filled keys.
+- UI login works: :5173 → "Sign in with Microsoft" → Entra → chat screen.
+- Agents answer via STREAMED LLM tokens (the grounded-snippet fallback
+  stops appearing) — same questions as §5, through the UI, picker on "Auto".
+- Router switches sparse → dense automatically (`agents.router.mode: auto`).
+- Real ingestion works (no more `EmbeddingError`): register a connection,
+  ingest via Data Onboarding, re-run §6 without the planted doc.
+- `GET /api/v1/admin/health/integrations` reports the filled integrations ok.
+
+### 9.4 dev / uat / prd — same keys, lookup: values
+
+In each env yaml the SAME keys hold `lookup:<secret-name>` instead of
+values, e.g. `client_secret: "lookup:entra-client-secret"`. Resolution needs
+`microsoft.azure.keyvault.keyvault_url` (+ optional `keyvault_secret_prefix`)
+and, in cloud, `microsoft.azure.managed_identity_client_id`. Agents use the
+SAME mechanism against the TEAM's own Key Vault (their env yamls already
+carry `lookup:` refs and `azure.keyvault.*` placeholders). Env-var override
+always wins (`ACE_*` for ACE, `AGENT_<SECTION>_<KEY>` for agents). Nothing
+else differs between environments.
+
+### 9.5 If something fails after the swap
+
+**Yaml values only — suspect config before code.** The single place a code
+fix may be justified is the Entra UI login flow itself (redirect loop, token
+rejection, session cookie not set) — it is implemented but was never
+exercised with live creds. If it fails, collect: browser network trace of
+`/api/v1/auth/login` → `/api/v1/auth/callback`, ACE log lines, and the exact
+Entra app registration settings (redirect URI, scopes, audience).
 
 ## 10. Adding a NEW agent, step by step
 
