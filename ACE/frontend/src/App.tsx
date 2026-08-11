@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { apiClient, UnauthenticatedError } from "./api/AceApiClient";
 import { Canvas } from "./components/Canvas";
+import { DataOnboarding } from "./components/DataOnboarding";
 import { RefusalCard } from "./components/RefusalCard";
 import { useChat } from "./hooks/useChat";
 import type { AgentSummary, SessionSummary, UserProfile } from "./types";
@@ -25,6 +26,7 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [agentId, setAgentId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const chat = useChat();
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -87,13 +89,19 @@ export default function App() {
             value={agentId ?? ""}
             onChange={(event) => setAgentId(event.target.value || null)}
           >
-            <option value="">Auto</option>
+            <option value="">Auto (routed by question)</option>
             {agents.map((agent) => (
               <option key={agent.id} value={agent.id} title={agent.description}>
                 {agent.display_name}
               </option>
             ))}
           </select>
+          <button
+            style={{ marginTop: "0.5rem" }}
+            onClick={() => setOnboardingOpen(true)}
+          >
+            Data Onboarding
+          </button>
         </div>
       </aside>
 
@@ -110,6 +118,26 @@ export default function App() {
               {turn.agentId && <span className="agent-chip">{turn.agentId}</span>}
               {turn.refusal ? (
                 <RefusalCard refusal={turn.refusal} />
+              ) : turn.disambiguation ? (
+                <div>
+                  <p>{turn.disambiguation.message}</p>
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                    {turn.disambiguation.candidates.map((candidate) => (
+                      <button
+                        key={candidate.agent_key}
+                        disabled={chat.busy}
+                        onClick={() =>
+                          void chat.send(
+                            turn.disambiguation?.question ?? "",
+                            candidate.agent_key,
+                          )
+                        }
+                      >
+                        {candidate.display_name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ) : (
                 <ReactMarkdown>{turn.content || (turn.streaming ? "…" : "")}</ReactMarkdown>
               )}
@@ -171,6 +199,7 @@ export default function App() {
           onClose={() => chat.setCanvasOpen(false)}
         />
       )}
+      {onboardingOpen && <DataOnboarding onClose={() => setOnboardingOpen(false)} />}
     </div>
   );
 }

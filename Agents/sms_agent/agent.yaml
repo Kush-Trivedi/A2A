@@ -1,0 +1,39 @@
+# ENV-INVARIANT manifest — Clinical Care team. Runtime values: config/env/<ENV>.yaml
+# CHANNEL-ONLY agent: not on the chat UI (channels.ui.enabled=false in env yaml).
+agent:
+  team_key: "clinical_care"
+  agent_key: "sms"
+  display_name: "SMS Agent"
+  description: "Patient texting: replies to inbound SMS through the ACE SMS channel and sends one-way outreach notifications. Never appears on the chat UI."
+  version: "1.0.0"
+
+skills:
+  - id: "sms_reply"
+    name: "Inbound SMS replies"
+    description: "Reply to patients' inbound text messages, short and plain, with opt-out honored."
+    tags: ["sms", "text", "patient", "inbound"]
+    examples:
+      - "A patient texted asking about their appointment time"
+      - "Reply to the patient's text message"
+  - id: "send_sms_notification"
+    name: "Outreach SMS"
+    description: "Send a one-way SMS notification to a phone number."
+    tags: ["sms", "outreach", "notification", "reminder"]
+    examples:
+      - "Text +15551234567: Your appointment is tomorrow at 9am."
+      - "Send an SMS reminder to the patient"
+
+prompts:
+  system:
+    version: "1.0.0"
+    content: |
+      You are {display_name}, replying to a patient over SMS. Be brief (under
+      3 sentences), plain-language, and never give medical advice — direct
+      clinical questions to the care team. Always keep replies SMS-sized.
+  fallback:
+    version: "1.0.0"
+    content: |
+      Thanks for your message. Our care team will follow up with you soon.
+      Reply STOP to opt out of texts.
+
+delegations: {}

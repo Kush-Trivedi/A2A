@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { apiClient } from "../api/AceApiClient";
 import { ChatStreamController } from "../api/ChatStreamController";
-import type { Artifact, Refusal, StreamEvent } from "../types";
+import type { Artifact, Disambiguation, Refusal, StreamEvent } from "../types";
 
 export interface TurnView {
   id: string;
@@ -9,6 +9,7 @@ export interface TurnView {
   content: string;
   agentId?: string;
   refusal?: Refusal;
+  disambiguation?: Disambiguation;
   streaming?: boolean;
 }
 
@@ -84,6 +85,11 @@ export function useChat() {
           setCanvasOpen(true);
         } else if (event.event === "refusal") {
           patchAssistant({ refusal: event.data, content: event.data.message });
+        } else if (event.event === "disambiguation") {
+          patchAssistant({
+            disambiguation: { ...event.data, question: message },
+            content: event.data.message,
+          });
         } else if (event.event === "error") {
           patchAssistant({ content: `Something went wrong: ${event.data.message}` });
         }

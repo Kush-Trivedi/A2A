@@ -1,8 +1,9 @@
 from fastapi import APIRouter
 
-from .agents_v1_routes import agent_registry_v1_router
+from .agents_v1_routes import agent_onboarding_v1_router, agent_registry_v1_router
 from .capability_v1_routes import capability_v1_router
 from .channels_v1_routes import sms_channel_v1_router, teams_channel_v1_router
+from .connections_v1_routes import connections_v1_router
 from .auth_v1_routes import auth_v1_router
 from .authz_v1_routes import admin_v1_router
 from .chat_v1_routes import chat_v1_router
@@ -13,6 +14,8 @@ v1_router = APIRouter(prefix="/api/v1")
 v1_router.include_router(auth_v1_router)
 v1_router.include_router(admin_v1_router)
 v1_router.include_router(agent_registry_v1_router)
+v1_router.include_router(agent_onboarding_v1_router)
+v1_router.include_router(connections_v1_router)
 v1_router.include_router(admin_health_v1_router)
 v1_router.include_router(capability_v1_router)
 v1_router.include_router(sms_channel_v1_router)

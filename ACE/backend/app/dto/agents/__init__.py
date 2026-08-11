@@ -7,13 +7,21 @@ from .agent_registry import (
     TeamResponse,
     UpdateAgentStatusRequest,
 )
+from .onboarding import (
+    OnboardingRegistrationResponse,
+    RouteOverlapModel,
+    TeamTokenResponse,
+)
 
 __all__ = [
     "AgentRegistrationResponse",
     "AgentVersionModel",
+    "OnboardingRegistrationResponse",
     "RegisterAgentRequest",
     "RegisteredAgentModel",
     "RegisterTeamRequest",
+    "RouteOverlapModel",
     "TeamResponse",
+    "TeamTokenResponse",
     "UpdateAgentStatusRequest",
 ]

@@ -29,15 +29,12 @@ _MENTION_RE = re.compile(r"<at>.*?</at>\s*", re.IGNORECASE | re.DOTALL)
 
 @dataclass(frozen=True)
 class TeamsSettings:
-    outgoing_webhook_secret: str
+    """Channel defaults only — webhook secrets are per-agent (team_config),
+    never platform-wide."""
+
     default_agent: str
-    agent_timeout_seconds: int
     tenant_id: str
     default_roles: tuple[str, ...]
-
-    @property
-    def secret_configured(self) -> bool:
-        return PlaceholderPolicy.is_configured(self.outgoing_webhook_secret)
 
 
 @lru_cache(maxsize=1)
@@ -45,9 +42,7 @@ def get_teams_settings() -> TeamsSettings:
     cfg = get_application_context().microsoft.get("microsoft_teams", {}) or {}
     agent = str(cfg.get("agent") or "")
     return TeamsSettings(
-        outgoing_webhook_secret=str(cfg.get("outgoing_webhook_secret") or ""),
         default_agent=agent if PlaceholderPolicy.is_configured(agent) else "general",
-        agent_timeout_seconds=int(cfg.get("agent_timeout_seconds") or 30),
         tenant_id=str(cfg.get("tenant_id") or "default"),
         default_roles=tuple(cfg.get("default_roles") or ["teams_user"]),
     )
@@ -92,13 +87,12 @@ class TeamsChannelService:
 
     async def binding_for(self, agent_key: str | None) -> TeamsBinding:
         """Teams is OPT-IN per agent: the owning team declares
-        `data.channels.teams.enabled` (+ their webhook secret) in the agent
-        manifest, which flows to registry team_config. Agents whose team never
-        opted in are not reachable over the Teams channel — no fallback to the
-        platform secret. The default route (agent_key=None) is platform-owned
-        and configured in yaml."""
+        `channels.teams.enabled` (+ their webhook secret) in their env config,
+        which flows to registry team_config at registration. Agents whose team
+        never opted in are not reachable over the Teams channel — there is no
+        platform-wide route or secret anymore."""
         if agent_key is None:
-            return TeamsBinding(enabled=True, secret=self._settings.outgoing_webhook_secret)
+            return TeamsBinding(enabled=False, secret="")
         pair = await self._registry.get_agent_with_team(
             tenant_id=self._settings.tenant_id, agent_key=agent_key
         )
@@ -110,19 +104,20 @@ class TeamsChannelService:
         return TeamsBinding(enabled=True, secret=str(channel.get("webhook_secret") or ""))
 
     def validate_signature(
-        self, *, raw_body: bytes, authorization: str, secret: str | None = None
+        self, *, raw_body: bytes, authorization: str, secret: str
     ) -> bool:
-        effective = secret if secret is not None else self._settings.outgoing_webhook_secret
-        if not PlaceholderPolicy.is_configured(effective):
+        """HMAC-SHA256 over the raw body with the AGENT's webhook secret
+        (resolved by binding_for) — there is no platform-wide secret."""
+        if not PlaceholderPolicy.is_configured(secret):
             logger.warning("Teams webhook secret not configured — HMAC check skipped (dev only).")
             return True
         scheme, _, provided = authorization.partition(" ")
         if scheme.strip().upper() != "HMAC" or not provided.strip():
             return False
         try:
-            key = base64.b64decode(effective)
+            key = base64.b64decode(secret)
         except Exception:  # noqa: BLE001
-            key = effective.encode()
+            key = secret.encode()
         digest = hmac.new(key, raw_body, hashlib.sha256).digest()
         expected = base64.b64encode(digest).decode()
         return hmac.compare_digest(expected, provided.strip())

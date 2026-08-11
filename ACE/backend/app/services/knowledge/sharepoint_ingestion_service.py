@@ -35,13 +35,24 @@ class SharePointIngestionService:
     def __init__(self, ingestion: IngestionService | None = None) -> None:
         self._ingestion = ingestion or get_ingestion_service()
 
-    def _client(self) -> SharePointClient:
-        cfg = get_application_context().microsoft.get("sharepoint", {}) or {}
+    @staticmethod
+    def _resolve_settings(connection_config: dict | None) -> dict:
+        """Team connection config (the standard path) or the legacy yaml
+        section — one code path either way, just a different value source."""
+        if connection_config:
+            return dict(connection_config)
+        return get_application_context().microsoft.get("sharepoint", {}) or {}
+
+    def _client(self, connection_config: dict | None = None) -> SharePointClient:
+        cfg = self._resolve_settings(connection_config)
         for key in ("tenant_id", "client_id", "client_secret", "hostname"):
             if not PlaceholderPolicy.is_configured(cfg.get(key)):
-                raise ValidationError(
-                    f"SharePoint is not configured. Set microsoft.sharepoint.{key} in the env yaml."
+                hint = (
+                    f"connection config key '{key}'"
+                    if connection_config
+                    else f"microsoft.sharepoint.{key} in the env yaml (or register a sharepoint connection)"
                 )
+                raise ValidationError(f"SharePoint is not configured. Set {hint}.")
         return SharePointClient(
             tenant_id=cfg["tenant_id"],
             client_id=cfg["client_id"],
@@ -57,6 +68,7 @@ class SharePointIngestionService:
         drive_name: str,
         folder_path: str = "",
         chunking_strategy: str | None = None,
+        connection_config: dict | None = None,
     ) -> SharePointIngestionResult:
         normalized = (source_name or "").strip().lower()
         if not normalized:
@@ -64,7 +76,7 @@ class SharePointIngestionService:
         knowledge_source = f"{_SOURCE_PREFIX}{normalized}"
 
         files = await asyncio.to_thread(
-            self._list_files, site_path, drive_name, folder_path
+            self._list_files, site_path, drive_name, folder_path, connection_config
         )
         ingested = skipped = chunks = 0
         for filename, raw_bytes in files:
@@ -106,10 +118,14 @@ class SharePointIngestionService:
         )
 
     def _list_files(
-        self, site_path: str, drive_name: str, folder_path: str
+        self,
+        site_path: str,
+        drive_name: str,
+        folder_path: str,
+        connection_config: dict | None = None,
     ) -> list[tuple[str, bytes]]:
-        cfg = get_application_context().microsoft.get("sharepoint", {}) or {}
-        client = self._client()
+        cfg = self._resolve_settings(connection_config)
+        client = self._client(connection_config)
         try:
             site_id = client.get_site_id(cfg["hostname"], site_path)
             drive = client.get_drive_by_name(site_id, drive_name)

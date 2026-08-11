@@ -1,0 +1,62 @@
+# DEV — same keys as dev/uat/prd; only VALUES differ.
+server:
+  host: "0.0.0.0"
+  port: 4000
+
+ace:
+  base_url: "https://your_dev_ace_url"
+  public_url: "https://your_dev_agent_url"
+  permission: "chat"
+  allowed_roles:
+    - "developer"
+  registration_token: "lookup:agent-registration-token"
+
+auth:
+  enabled: false
+  tenant_id: "your_tenant_id"
+  audience: "your_agent_app_id_uri"
+  authority: "https://login.microsoftonline.com"
+  issuer: ""
+  jwks_url: ""
+
+llm:
+  default: "chat"
+  deployments:
+    chat: "your_deployment_name"
+
+retrieval:
+  enabled: false
+  mode: "sparse"
+  knowledge_sources: []
+
+connections:
+  sharepoint:
+    enabled: false
+    connection: ""
+  storage_blob:
+    enabled: false
+    connection: ""
+  databricks:
+    enabled: true
+    connection: "gda_databricks"      # registered once via POST /api/v1/connections
+    genie_space: "your_genie_space_id"
+  twilio:
+    enabled: false
+    connection: ""
+
+channels:
+  ui:
+    enabled: true
+  teams:
+    enabled: false
+    webhook_secret: "lookup:teams-webhook-secret"
+  sms:
+    enabled: false
+    inbound: false
+    outreach: false
+
+azure:
+  managed_identity_client_id: "your_managed_identity_client_id"
+  keyvault:
+    keyvault_url: "your_team_keyvault_url"
+    keyvault_secret_prefix: ""

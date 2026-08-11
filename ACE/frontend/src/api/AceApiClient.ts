@@ -60,6 +60,32 @@ export class AceApiClient {
     return this.request("/api/v1/auth/logout", { method: "POST" });
   }
 
+  registerConnection(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.request("/api/v1/connections", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  connections(): Promise<Record<string, unknown>[]> {
+    return this.request("/api/v1/connections");
+  }
+
+  ingestSource(payload: Record<string, unknown>): Promise<{ job_id: string }> {
+    return this.request("/api/v1/knowledge/ingest/source", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  ingestJob(jobId: string): Promise<{ status: string; detail: Record<string, unknown> }> {
+    return this.request(`/api/v1/knowledge/ingest/jobs/${jobId}`);
+  }
+
+  knowledgeSources(): Promise<Record<string, unknown>[]> {
+    return this.request("/api/v1/knowledge/sources");
+  }
+
   async uploadFile(sessionId: string, file: File): Promise<{ chunk_count: number }> {
     const form = new FormData();
     form.append("knowledge_source", "upload");

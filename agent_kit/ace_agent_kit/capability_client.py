@@ -28,6 +28,20 @@ class AccessibleAgent:
     is_remote: bool
 
 
+@dataclass(frozen=True)
+class ResolvedAgent:
+    """Dynamic peer resolution result — card_url is present only when the
+    END USER's roles may access the peer (ACE enforces Casbin on resolve)."""
+
+    found: bool
+    accessible: bool = False
+    agent_key: str = ""
+    display_name: str = ""
+    team_key: str = ""
+    card_url: str = ""
+    auth_audience: str = ""
+
+
 class AceCapabilityClient:
     def __init__(
         self,
@@ -67,6 +81,7 @@ class AceCapabilityClient:
         session_id: str | None = None,
         top_k: int | None = None,
         retrieval_mode: str | None = None,
+        agent_key: str = "",
     ) -> list[RetrievedChunk]:
         data = await self._post(
             "/api/v1/capability/knowledge/retrieve",
@@ -77,9 +92,32 @@ class AceCapabilityClient:
                 "session_id": session_id,
                 "top_k": top_k,
                 "retrieval_mode": retrieval_mode,
+                "agent_key": agent_key,
             },
         )
         return [RetrievedChunk(**chunk) for chunk in data.get("chunks", [])]
+
+    async def genie_query(
+        self,
+        *,
+        envelope: ContextEnvelope,
+        agent_key: str,
+        connection: str,
+        genie_space: str,
+        question: str,
+    ) -> dict[str, Any]:
+        """Live Databricks Genie query through ACE (connection resolved from
+        the team's connection registry — no Databricks creds agent-side)."""
+        return await self._post(
+            "/api/v1/capability/data/genie",
+            {
+                "envelope": envelope.to_payload(),
+                "agent_key": agent_key,
+                "connection": connection,
+                "genie_space": genie_space,
+                "question": question,
+            },
+        )
 
     async def llm_chat(
         self,
@@ -161,3 +199,13 @@ class AceCapabilityClient:
             {"envelope": envelope.to_payload()},
         )
         return [AccessibleAgent(**agent) for agent in data.get("agents", [])]
+
+    async def resolve_agent(
+        self, *, envelope: ContextEnvelope, agent_key: str
+    ) -> ResolvedAgent:
+        """Runtime peer discovery for dynamic agent-to-agent A2A calls."""
+        data = await self._post(
+            "/api/v1/capability/agents/resolve",
+            {"envelope": envelope.to_payload(), "agent_key": agent_key},
+        )
+        return ResolvedAgent(**data)

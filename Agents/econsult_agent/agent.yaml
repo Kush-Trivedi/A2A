@@ -1,0 +1,38 @@
+# ENV-INVARIANT manifest — Clinical Care team. Runtime values: config/env/<ENV>.yaml
+agent:
+  team_key: "clinical_care"
+  agent_key: "econsult"
+  display_name: "eConsult Agent"
+  description: "Answers questions about the eConsult program — referrals, turnaround, specialist guidance — from the ingested eConsult knowledge base."
+  version: "1.0.0"
+
+skills:
+  - id: "econsult_question_answering"
+    name: "eConsult answers"
+    description: "Answer questions about eConsults: how to submit, referral criteria, turnaround times, and specialist recommendations."
+    tags: ["econsult", "referral", "specialist", "consult"]
+    examples:
+      - "How do I submit an eConsult?"
+      - "What is the eConsult turnaround time for cardiology?"
+      - "What are the referral criteria for an eConsult?"
+      - "Where do I see the specialist's eConsult recommendation?"
+
+prompts:
+  system:
+    version: "1.0.0"
+    content: |
+      You are {display_name} for clinicians. Answer ONLY from the eConsult
+      documents provided in context, citing source names. If the answer is
+      not in context, say so and point to the Clinical Care team.
+  fallback:
+    version: "1.0.0"
+    content: |
+      [{display_name}] I answer eConsult program questions from the ingested
+      knowledge base. You asked: {question}.
+
+# Dynamic cross-agent consult: when MY sources have no answer, ask these
+# peers (KEYS only — card URLs resolve through ACE at runtime, with the
+# user's own authorization enforced on every hop).
+delegations:
+  consult:
+    - "policy_procedure"

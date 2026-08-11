@@ -1,0 +1,63 @@
+# LOCAL — same keys as dev/uat/prd; only VALUES differ.
+server:
+  host: "0.0.0.0"
+  port: 3700
+
+ace:
+  base_url: "http://localhost:3000"
+  public_url: "http://localhost:3700"
+  permission: "chat"
+  allowed_roles:
+    - "developer"
+    - "sms_patient"
+  registration_token: "your_registration_token"
+
+auth:
+  enabled: false
+  tenant_id: "your_tenant_id"
+  audience: "your_agent_app_id_uri"
+  authority: "https://login.microsoftonline.com"
+  issuer: ""
+  jwks_url: ""
+
+llm:
+  default: "chat"
+  deployments:
+    chat: "your_deployment_name"
+
+retrieval:
+  enabled: false
+  mode: "sparse"
+  knowledge_sources: []
+
+connections:
+  sharepoint:
+    enabled: false
+    connection: ""
+  storage_blob:
+    enabled: false
+    connection: ""
+  databricks:
+    enabled: false
+    connection: ""
+    genie_space: ""
+  twilio:
+    enabled: true
+    connection: "clinical_twilio"   # registered once via POST /api/v1/connections
+
+channels:
+  ui:
+    enabled: false                  # channel-only: never on the chat screen
+  teams:
+    enabled: false
+    webhook_secret: "your_teams_webhook_secret"
+  sms:
+    enabled: true
+    inbound: true
+    outreach: true
+
+azure:
+  managed_identity_client_id: ""
+  keyvault:
+    keyvault_url: ""
+    keyvault_secret_prefix: ""

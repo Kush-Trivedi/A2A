@@ -122,6 +122,7 @@ class AgentCardService:
                 "name": skill.name,
                 "description": skill.description,
                 "tags": list(skill.tags),
+                "examples": list(skill.examples),
             }
             for skill in card.skills
         )

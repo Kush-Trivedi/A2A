@@ -12,14 +12,24 @@ from .....dto.capability import (
     CapabilityCatalogResponse,
     CapabilityChunkModel,
     CapabilityEnvelopeModel,
+    CapabilityGenieRequest,
+    CapabilityGenieResponse,
     CapabilityLlmChatRequest,
     CapabilityLlmChatResponse,
+    CapabilityResolveRequest,
+    CapabilityResolveResponse,
     CapabilityRetrieveRequest,
     CapabilityRetrieveResponse,
     CapabilitySmsSendRequest,
     CapabilitySmsSendResponse,
 )
+from .....security.authorization.context_attrs import AuthorizationContextBuilder
+from .....security.authorization.enforcer import get_casbin_enforcer
+from .....services.agents.registry_service import get_agent_registry_service
+from .....services.connections import get_connection_service
+from .....services.databricks import get_genie_service
 from .....services.sms import get_sms_channel_service
+from .....utils.errors import ValidationError
 from .....services.a2a.llm_gateway_service import (
     LlmGatewayService,
     get_llm_gateway_service,
@@ -30,6 +40,7 @@ from .....security.session import SessionContext
 from .....services.agents.agent_catalog_service import AgentCatalogService
 from .....services.embedding.embedding_service import EmbeddingService
 from .....services.knowledge.gateway import KnowledgeGateway, get_knowledge_gateway
+from .....services.knowledge.source_registry_service import get_source_registry_service
 from ....dependencies import (
     provide_agent_catalog_service,
     provide_embedding_service,
@@ -73,13 +84,27 @@ async def retrieve_knowledge(
 ) -> ApiEnvelope[CapabilityRetrieveResponse]:
     gateway: KnowledgeGateway = get_knowledge_gateway()
     context = EnvelopeContextMapper.to_context(body.envelope)
+
+    # Source-registry enforcement: registered sources are readable only by
+    # their bound agents (owner team decided at ingestion). Role enforcement
+    # stays with Casbin inside the gateway — both must pass.
+    requested = tuple(body.knowledge_sources)
+    if body.agent_key:
+        requested = await get_source_registry_service().filter_sources_for_agent(
+            tenant_id=context.tenant_id,
+            agent_key=body.agent_key,
+            requested_sources=requested,
+        )
+        if body.knowledge_sources and not requested:
+            return ApiEnvelope(data=CapabilityRetrieveResponse(chunks=[]))
+
     vector = (
         [] if body.retrieval_mode == "sparse" else await embedding.embed_query(body.query)
     )
     chunks = await gateway.retrieve(
         context=context,
         embedding=vector,
-        requested_sources=tuple(body.knowledge_sources),
+        requested_sources=requested,
         session_id=body.session_id,
         top_k=body.top_k,
         query_text=body.query,
@@ -178,6 +203,105 @@ async def sms_send(
         agent_key=body.agent_key,
     )
     return ApiEnvelope(data=CapabilitySmsSendResponse(message_sid=sid))
+
+
+@capability_v1_router.post(
+    "/agents/resolve",
+    response_model=ApiEnvelope[CapabilityResolveResponse],
+    dependencies=[Depends(require_service_auth)],
+)
+async def resolve_agent(
+    body: CapabilityResolveRequest,
+) -> ApiEnvelope[CapabilityResolveResponse]:
+    """Dynamic agent-to-agent discovery: an agent asks ACE for a peer's card
+    URL at runtime. The END USER's roles (from the forwarded envelope) are
+    enforced against the peer — a delegation can never reach an agent the
+    user could not reach directly. No card URL ever lives in team config."""
+    context = EnvelopeContextMapper.to_context(body.envelope)
+    registered = await get_agent_registry_service().find_active_agent(
+        tenant_id=context.tenant_id, key=body.agent_key.strip().lower()
+    )
+    if registered is None or not registered.card_url:
+        return ApiEnvelope(data=CapabilityResolveResponse(found=False))
+
+    enforcer = get_casbin_enforcer()
+    accessible = True
+    if registered.permission and enforcer.enabled:
+        accessible = await enforcer.enforce_any_role(
+            context.roles,
+            context.tenant_id,
+            f"agent:{registered.agent_key}",
+            registered.permission,
+            AuthorizationContextBuilder.build(context),
+        )
+    pair = await get_agent_registry_service().get_agent_with_team(
+        tenant_id=context.tenant_id, agent_key=registered.agent_key
+    )
+    team_key = pair[1].key if pair is not None else ""
+    return ApiEnvelope(
+        data=CapabilityResolveResponse(
+            found=True,
+            accessible=accessible,
+            agent_key=registered.agent_key,
+            display_name=registered.display_name,
+            team_key=team_key,
+            card_url=registered.card_url if accessible else "",
+            auth_audience=str(
+                (registered.team_config or {}).get("auth_audience") or ""
+            )
+            if accessible
+            else "",
+        )
+    )
+
+
+@capability_v1_router.post(
+    "/data/genie",
+    response_model=ApiEnvelope[CapabilityGenieResponse],
+    dependencies=[Depends(require_service_auth)],
+)
+async def genie_query(
+    body: CapabilityGenieRequest,
+) -> ApiEnvelope[CapabilityGenieResponse]:
+    """Live Databricks Genie query. The workspace comes from the calling
+    team's registered databricks connection; the agent must belong to the
+    team that owns the connection — data never crosses team boundaries."""
+    connection = await get_connection_service().resolve_config(
+        tenant_id=body.envelope.tenant_id, name=body.connection
+    )
+    if connection.get("connection_type") != "databricks":
+        raise ValidationError(
+            f"Connection '{body.connection}' is not a databricks connection."
+        )
+
+    pair = await get_agent_registry_service().get_agent_with_team(
+        tenant_id=body.envelope.tenant_id, agent_key=body.agent_key
+    )
+    if pair is None:
+        raise ValidationError(
+            "Calling agent is not registered.", details={"agent_key": body.agent_key}
+        )
+    _, team = pair
+    if connection.get("team_key") != team.key:
+        raise ValidationError(
+            "Agent's team does not own this databricks connection.",
+            details={"agent_key": body.agent_key, "connection": body.connection},
+        )
+
+    answer = await get_genie_service().ask_with_connection(
+        host=str(connection.get("host", "")),
+        token=str(connection.get("token", "")),
+        space_id=body.genie_space,
+        question=body.question,
+    )
+    return ApiEnvelope(
+        data=CapabilityGenieResponse(
+            answer=answer.text,
+            sql=answer.sql,
+            columns=list(answer.columns),
+            rows=[list(row) for row in answer.rows],
+        )
+    )
 
 
 @capability_v1_router.post(

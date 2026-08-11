@@ -1,6 +1,6 @@
 # Local cloud-parity run: docker compose up --build
 # Same images that ship to Container Apps; agent card URLs use service DNS
-# names (register agents with e.g. http://scheduling:3100/... in this mode).
+# names (agents' env yamls point ace.base_url at http://ace:3000 in this mode).
 services:
   postgres:
     image: pgvector/pgvector:pg17
@@ -22,30 +22,27 @@ services:
     ports: ["3000:3000"]
     depends_on: [postgres]
 
-  scheduling:
-    build: { context: ., dockerfile: Agents/Dockerfile, args: { AGENT: scheduling_agent } }
-    ports: ["3100:3100"]
-  insurance:
-    build: { context: ., dockerfile: Agents/Dockerfile, args: { AGENT: insurance_agent } }
-    ports: ["3200:3200"]
   general:
     build: { context: ., dockerfile: Agents/Dockerfile, args: { AGENT: general_agent } }
     ports: ["3300:3300"]
   file-qa:
     build: { context: ., dockerfile: Agents/Dockerfile, args: { AGENT: file_upload_agent } }
     ports: ["3400:3400"]
-  sharepoint-qa:
-    build: { context: ., dockerfile: Agents/Dockerfile, args: { AGENT: sharepoint_agent } }
+  policy-procedure:
+    build: { context: ., dockerfile: Agents/Dockerfile, args: { AGENT: policy_procedure_agent } }
     ports: ["3500:3500"]
-  blob-qa:
-    build: { context: ., dockerfile: Agents/Dockerfile, args: { AGENT: blob_agent } }
-    ports: ["3600:3600"]
-  sms-outreach:
-    build: { context: ., dockerfile: Agents/Dockerfile, args: { AGENT: sms_outreach_agent } }
+  sms:
+    build: { context: ., dockerfile: Agents/Dockerfile, args: { AGENT: sms_agent } }
     ports: ["3700:3700"]
   benefits:
     build: { context: ., dockerfile: Agents/Dockerfile, args: { AGENT: benefits_agent } }
     ports: ["3800:3800"]
+  econsult:
+    build: { context: ., dockerfile: Agents/Dockerfile, args: { AGENT: econsult_agent } }
+    ports: ["3900:3900"]
+  gda:
+    build: { context: ., dockerfile: Agents/Dockerfile, args: { AGENT: gda_agent } }
+    ports: ["4000:4000"]
 
   frontend:
     build: ./ACE/frontend

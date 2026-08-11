@@ -28,17 +28,23 @@ wheels = [
 
 [[package]]
 name = "ace-agent-kit"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "../agent_kit" }
 dependencies = [
     { name = "a2a-sdk" },
+    { name = "azure-identity" },
+    { name = "azure-keyvault-secrets" },
     { name = "httpx" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "a2a-sdk", specifier = ">=1.1.2" },
+    { name = "azure-identity", specifier = ">=1.25.3" },
+    { name = "azure-keyvault-secrets", specifier = ">=4.11.0" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
 ]
 
 [[package]]

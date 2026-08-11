@@ -1,43 +1,33 @@
-# Team-owned agent manifest — ACE Platform team.
+# ENV-INVARIANT manifest — ACE Platform team. Runtime values: config/env/<ENV>.yaml
 agent:
   team_key: "ace_platform"
   agent_key: "file_qa"
-  display_name: "File Q&A Agent"
-  description: "Answers questions strictly from the files you upload in this chat."
-  version: "0.1.0"
-
-server:
-  host: "0.0.0.0"
-  port: 3400
+  display_name: "File Q&A"
+  description: "Answers questions strictly from files you upload in this chat session — nothing else, ever."
+  version: "1.0.0"
 
 skills:
   - id: "file_question_answering"
-    name: "File question answering"
-    description: "Answer questions grounded ONLY in the session's uploaded documents."
-    tags: ["files", "upload", "documents"]
+    name: "Uploaded file Q&A"
+    description: "Answer questions about documents the user uploaded in the current chat session only."
+    tags: ["file", "upload", "document", "session"]
     examples:
-      - "What does the uploaded discharge summary say about follow-up care?"
+      - "What does my uploaded file say about the discharge plan?"
+      - "Summarize the document I just uploaded"
+      - "What's in this file?"
+      - "Find the total amount in the PDF I attached"
 
-data: {}
+prompts:
+  system:
+    version: "1.0.0"
+    content: |
+      You are {display_name}. Answer ONLY from the user's uploaded session
+      files provided in context. If the answer is not in those files, say so
+      plainly. Never use outside knowledge.
+  fallback:
+    version: "1.0.0"
+    content: |
+      [{display_name}] Please upload a file in this chat (📎) and ask again —
+      I only answer from documents uploaded in this session.
 
 delegations: {}
-
-auth:
-  enabled: false
-  tenant_id: "your_tenant_id"
-  audience: "your_agent_app_id_uri"
-  authority: "https://login.microsoftonline.com"
-  issuer: ""
-  jwks_url: ""
-
-ace:
-  base_url: "http://localhost:3000"
-  public_url: "http://localhost:3400"
-  permission: "chat"
-  allowed_roles:
-    - "developer"
-    - "nurse"
-  # sparse works without LLM embedding creds; switch to hybrid once
-  # microsoft.azure.azure_foundry is configured.
-  retrieval_mode: "sparse"
-  knowledge_sources: []

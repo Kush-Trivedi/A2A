@@ -1,0 +1,64 @@
+# UAT — same keys as dev/uat/prd; only VALUES differ.
+server:
+  host: "0.0.0.0"
+  port: 3500
+
+ace:
+  base_url: "https://your_uat_ace_url"
+  public_url: "https://your_uat_agent_url"
+  permission: "chat"
+  allowed_roles:
+    - "developer"
+    - "nurse"
+  registration_token: "lookup:agent-registration-token"
+
+auth:
+  enabled: false
+  tenant_id: "your_tenant_id"
+  audience: "your_agent_app_id_uri"
+  authority: "https://login.microsoftonline.com"
+  issuer: ""
+  jwks_url: ""
+
+llm:
+  default: "chat"
+  deployments:
+    chat: "your_deployment_name"
+
+retrieval:
+  enabled: true
+  mode: "sparse"
+  knowledge_sources:
+    - "sharepoint:policies"
+
+connections:
+  sharepoint:
+    enabled: true
+    connection: "clinical_sharepoint"   # registered once via POST /api/v1/connections
+  storage_blob:
+    enabled: false
+    connection: ""
+  databricks:
+    enabled: false
+    connection: ""
+    genie_space: ""
+  twilio:
+    enabled: false
+    connection: ""
+
+channels:
+  ui:
+    enabled: true
+  teams:
+    enabled: false
+    webhook_secret: "lookup:teams-webhook-secret"
+  sms:
+    enabled: false
+    inbound: false
+    outreach: false
+
+azure:
+  managed_identity_client_id: "your_managed_identity_client_id"
+  keyvault:
+    keyvault_url: "your_team_keyvault_url"
+    keyvault_secret_prefix: ""

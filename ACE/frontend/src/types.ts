@@ -54,11 +54,23 @@ export interface ChatMessage {
   feedback: string | null;
 }
 
+export interface DisambiguationCandidate {
+  agent_key: string;
+  display_name: string;
+}
+
+export interface Disambiguation {
+  message: string;
+  candidates: DisambiguationCandidate[];
+  question?: string;
+}
+
 export type StreamEvent =
   | { event: "meta"; data: { session_id: string; agent_id: string; sources: string[] } }
   | { event: "token"; data: { text: string } }
   | { event: "artifact"; data: Artifact }
   | { event: "state"; data: { state: string } }
   | { event: "refusal"; data: Refusal }
+  | { event: "disambiguation"; data: Disambiguation }
   | { event: "error"; data: { code: string; message: string } }
   | { event: "done"; data: { session_id: string; message_id: string } };

@@ -22,6 +22,7 @@ class CapabilityRetrieveRequest(StrictBaseModel):
     session_id: str | None = None
     top_k: int | None = Field(default=None, ge=1, le=50)
     retrieval_mode: str | None = None
+    agent_key: str = ""  # calling agent — enforced against source registry bindings
 
 
 class CapabilityChunkModel(StrictBaseModel):
@@ -64,6 +65,40 @@ class CapabilitySmsSendRequest(StrictBaseModel):
 
 class CapabilitySmsSendResponse(StrictBaseModel):
     message_sid: str
+
+
+class CapabilityGenieRequest(StrictBaseModel):
+    envelope: CapabilityEnvelopeModel
+    agent_key: str = Field(..., min_length=1, max_length=60)
+    connection: str = Field(..., min_length=1, max_length=120)
+    genie_space: str = Field(..., min_length=1, max_length=120)
+    question: str = Field(..., min_length=1, max_length=4000)
+
+
+class CapabilityGenieResponse(StrictBaseModel):
+    answer: str
+    sql: str = ""
+    columns: list[str] = Field(default_factory=list)
+    rows: list[list[Any]] = Field(default_factory=list)
+
+
+class CapabilityResolveRequest(StrictBaseModel):
+    envelope: CapabilityEnvelopeModel
+    agent_key: str = Field(..., min_length=1, max_length=60)
+
+
+class CapabilityResolveResponse(StrictBaseModel):
+    """Dynamic peer resolution for agent-to-agent A2A calls. `card_url` is
+    returned ONLY when the end user's roles may access the target — routing
+    selects, Casbin decides, even between agents."""
+
+    found: bool
+    accessible: bool = False
+    agent_key: str = ""
+    display_name: str = ""
+    team_key: str = ""
+    card_url: str = ""
+    auth_audience: str = ""
 
 
 class CapabilityCatalogRequest(StrictBaseModel):

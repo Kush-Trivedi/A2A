@@ -1,7 +1,6 @@
 from ..security.oauth_client import EntraOauthClient
 from ..security.session import SessionStore, get_session_store
 from ..security.settings import AuthSettings, get_auth_settings
-from ..services.agents import AgentRegistry, get_agent_registry
 from ..services.agents.agent_catalog_service import (
     AgentCatalogService,
     get_agent_catalog_service,
@@ -9,6 +8,18 @@ from ..services.agents.agent_catalog_service import (
 from ..services.agents.registry_service import (
     AgentRegistryService,
     get_agent_registry_service,
+)
+from ..services.agents.route_index_service import (
+    RouteIndexService,
+    get_route_index_service,
+)
+from ..services.agents.team_token_service import (
+    TeamTokenService,
+    get_team_token_service,
+)
+from ..services.knowledge.source_registry_service import (
+    SourceRegistryService,
+    get_source_registry_service,
 )
 from ..security.oauth_state import OAuthStateManager, get_oauth_state_manager
 from ..security.authorization.enforcer import CasbinEnforcer, get_casbin_enforcer
@@ -30,6 +41,7 @@ from ..services.embedding.ingestion_service import (
     IngestionService,
     get_ingestion_service,
 )
+from ..services.connections import ConnectionService, get_connection_service
 from ..services.databricks import GenieService, get_genie_service
 from ..services.health import (
     IntegrationHealthService,
@@ -76,9 +88,6 @@ class ServiceContainer:
     def ingestion_service(self) -> IngestionService:
         return get_ingestion_service()
 
-    def agent_registry(self) -> AgentRegistry:
-        return get_agent_registry()
-
     def agent_registry_service(self) -> AgentRegistryService:
         return get_agent_registry_service()
 
@@ -87,6 +96,18 @@ class ServiceContainer:
 
     def agent_catalog_service(self) -> AgentCatalogService:
         return get_agent_catalog_service()
+
+    def connection_service(self) -> ConnectionService:
+        return get_connection_service()
+
+    def source_registry_service(self) -> SourceRegistryService:
+        return get_source_registry_service()
+
+    def team_token_service(self) -> TeamTokenService:
+        return get_team_token_service()
+
+    def route_index_service(self) -> RouteIndexService:
+        return get_route_index_service()
 
     def genie_service(self) -> GenieService:
         return get_genie_service()
@@ -110,10 +131,13 @@ provide_authorization_service = container.authorization_service
 provide_conversation_service = container.conversation_service
 provide_embedding_service = container.embedding_service
 provide_ingestion_service = container.ingestion_service
-provide_agent_registry = container.agent_registry
 provide_agent_registry_service = container.agent_registry_service
 provide_integration_health_service = container.integration_health_service
 provide_agent_catalog_service = container.agent_catalog_service
+provide_connection_service = container.connection_service
+provide_source_registry_service = container.source_registry_service
+provide_team_token_service = container.team_token_service
+provide_route_index_service = container.route_index_service
 provide_genie_service = container.genie_service
 provide_sharepoint_ingestion_service = container.sharepoint_ingestion_service
 provide_blob_ingestion_service = container.blob_ingestion_service

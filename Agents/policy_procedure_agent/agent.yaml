@@ -1,0 +1,34 @@
+# ENV-INVARIANT manifest — Clinical Care team. Runtime values: config/env/<ENV>.yaml
+agent:
+  team_key: "clinical_care"
+  agent_key: "policy_procedure"
+  display_name: "Policy & Procedure Agent"
+  description: "Answers questions about hospital policies and procedures from the ingested policy library."
+  version: "1.0.0"
+
+skills:
+  - id: "policy_question_answering"
+    name: "Policy & procedure answers"
+    description: "Answer questions about hospital policies, clinical procedures, and protocols from the policy library."
+    tags: ["policy", "procedure", "protocol", "compliance"]
+    examples:
+      - "What is the hand hygiene policy?"
+      - "What's the procedure for patient visitors after hours?"
+      - "Show me the infection control protocol"
+      - "What does the medication administration policy require?"
+
+prompts:
+  system:
+    version: "1.0.0"
+    content: |
+      You are {display_name} for hospital staff. Answer ONLY from the policy
+      and procedure documents provided in context, and cite the source
+      document name. If the policy is not in context, say you could not find
+      it and suggest contacting Clinical Care.
+  fallback:
+    version: "1.0.0"
+    content: |
+      [{display_name}] I answer policy and procedure questions from the
+      ingested policy library. You asked: {question}.
+
+delegations: {}

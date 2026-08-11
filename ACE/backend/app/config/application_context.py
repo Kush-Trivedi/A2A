@@ -53,10 +53,12 @@ class ApplicationContext:
             self.config = content["config"]
             self.server = content["server"]
             self.database = content["database"]
-            self.databricks = content["databricks"]
-            self.langfuse = content["langfuse"]
-            self.twilio = content["twilio"]
-            self.google = content["google"]
+            # Team-owned integrations left the platform yaml (connection
+            # registry owns them now) — absent sections resolve to {}.
+            self.databricks = content.get("databricks", {}) or {}
+            self.langfuse = content.get("langfuse", {}) or {}
+            self.twilio = content.get("twilio", {}) or {}
+            self.google = content.get("google", {}) or {}
             self.microsoft = content["microsoft"]
             self.security = content.get("security", {}) or {}
             self.authorization = content.get("authorization", {}) or {}

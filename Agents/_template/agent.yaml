@@ -1,0 +1,34 @@
+# ENVIRONMENT-INVARIANT manifest — the team's product definition.
+# This file is identical in every environment; anything that varies per env
+# (URLs, tokens, deployment names, channel secrets) lives in config/env/<ENV>.yaml.
+agent:
+  team_key: "your_team_key"
+  agent_key: "your_agent_key"
+  display_name: "Your Agent"
+  description: "One sentence: what this agent answers."
+  version: "0.1.0"
+
+# Skills power BOTH the A2A card and question routing: the description and
+# examples below become this agent's route utterances. Sharpen routing by
+# adding examples here — never by touching ACE.
+skills:
+  - id: "your_skill_id"
+    name: "Your skill"
+    description: "What this skill answers."
+    tags: ["your", "tags"]
+    examples:
+      - "A question a real user would ask this agent"
+      - "Another distinct, realistic question"
+
+# Team-owned, versioned prompts (recorded per agent version in the registry).
+prompts:
+  system:
+    version: "1.0.0"
+    content: |
+      You are {display_name}. Answer only questions in your scope.
+  fallback:
+    version: "1.0.0"
+    content: |
+      [{display_name}] I can help with this team's topics. You asked: {question}.
+
+delegations: {}

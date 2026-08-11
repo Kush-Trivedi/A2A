@@ -1,19 +1,26 @@
+"""Agent configuration — built on the kit's AgentContext.
+
+Manifest (agent.yaml, env-invariant) + config/env/<ENV>.yaml (env values,
+Key Vault lookups resolved) merge into one frozen AgentConfig. Nothing in
+this file changes between environments — set ENV and go.
+"""
+
 from dataclasses import dataclass, field
 from functools import lru_cache
-from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
-import yaml
-
-from ace_agent_kit import DelegationTarget
+from ace_agent_kit import (
+    AgentContext,
+    AgentSettingsValidator,
+    PromptStore,
+    get_agent_context,
+)
 
 from .auth import AgentAuthSettings
 
-_MANIFEST_PATH = Path(__file__).resolve().parent.parent / "agent.yaml"
-
 
 @dataclass(frozen=True)
-class SkillConfig:
+class SkillDefinition:
     id: str
     name: str
     description: str
@@ -30,80 +37,94 @@ class AgentConfig:
     version: str
     host: str
     port: int
-    skills: tuple[SkillConfig, ...]
-    data: dict[str, Any] = field(default_factory=dict)
-    ace_base_url: str = "http://localhost:3000"
-    public_url: str = "http://localhost:3100"
-    permission: str = "chat"
-    allowed_roles: tuple[str, ...] = ()
-    retrieval_mode: str | None = None
-    knowledge_sources: tuple[str, ...] = ()
-    auth: AgentAuthSettings = field(
-        default_factory=lambda: AgentAuthSettings(
-            enabled=False, tenant_id="", audience=""
+    ace_base_url: str
+    public_url: str
+    permission: str
+    allowed_roles: tuple[str, ...]
+    registration_token: str
+    auth: AgentAuthSettings
+    llm_default: str
+    llm_deployments: Mapping[str, str]
+    retrieval_mode: str
+    knowledge_sources: tuple[str, ...]
+    connections: Mapping[str, Any]
+    channels: Mapping[str, Any]
+    skills: tuple[SkillDefinition, ...]
+    prompt_store: PromptStore
+    delegations: Mapping[str, Any] = field(default_factory=dict)
+
+    @property
+    def default_deployment(self) -> str:
+        return str(self.llm_deployments.get(self.llm_default, "") or "")
+
+
+class AgentConfigFactory:
+    """Builds the frozen AgentConfig from AgentContext (manifest + env yaml)."""
+
+    def __init__(self, context: AgentContext | None = None) -> None:
+        self._context = context or get_agent_context()
+
+    def build(self) -> AgentConfig:
+        AgentSettingsValidator(self._context).validate_and_log()
+
+        manifest = self._context.manifest
+        agent = manifest.get("agent") or {}
+        ace = self._context.ace
+        server = self._context.server
+        auth = self._context.auth
+        llm = self._context.llm
+        retrieval = self._context.retrieval
+
+        return AgentConfig(
+            team_key=str(agent.get("team_key", "")),
+            agent_key=str(agent.get("agent_key", "")),
+            display_name=str(agent.get("display_name", "")),
+            description=str(agent.get("description", "")),
+            version=str(agent.get("version", "0.1.0")),
+            host=str(server.get("host", "0.0.0.0")),
+            port=int(server.get("port", 0)),
+            ace_base_url=str(ace.get("base_url", "")).rstrip("/"),
+            public_url=str(ace.get("public_url", "")).rstrip("/"),
+            permission=str(ace.get("permission", "chat")),
+            allowed_roles=tuple(ace.get("allowed_roles") or []),
+            registration_token=str(ace.get("registration_token", "")),
+            auth=AgentAuthSettings(
+                enabled=bool(auth.get("enabled", False)),
+                tenant_id=str(auth.get("tenant_id", "")),
+                audience=str(auth.get("audience", "")),
+                authority=str(auth.get("authority", "https://login.microsoftonline.com")),
+                issuer_override=str(auth.get("issuer", "")),
+                jwks_url_override=str(auth.get("jwks_url", "")),
+            ),
+            llm_default=str(llm.get("default", "")),
+            llm_deployments=dict(llm.get("deployments") or {}),
+            retrieval_mode=str(retrieval.get("mode", "sparse")),
+            knowledge_sources=tuple(retrieval.get("knowledge_sources") or []),
+            connections=dict(self._context.connections),
+            channels=dict(self._context.channels),
+            skills=self._skills(manifest),
+            prompt_store=PromptStore.from_manifest(manifest.get("prompts") or {}),
+            delegations=dict(manifest.get("delegations") or {}),
         )
-    )
-    delegations: dict[str, DelegationTarget] = field(default_factory=dict)
+
+    @staticmethod
+    def _skills(manifest: Mapping[str, Any]) -> tuple[SkillDefinition, ...]:
+        skills: list[SkillDefinition] = []
+        for raw in manifest.get("skills") or []:
+            if not isinstance(raw, Mapping):
+                continue
+            skills.append(
+                SkillDefinition(
+                    id=str(raw.get("id", "")),
+                    name=str(raw.get("name", "")),
+                    description=str(raw.get("description", "")),
+                    tags=tuple(str(t) for t in (raw.get("tags") or [])),
+                    examples=tuple(str(e) for e in (raw.get("examples") or [])),
+                )
+            )
+        return tuple(skills)
 
 
 @lru_cache(maxsize=1)
 def get_agent_config() -> AgentConfig:
-    with _MANIFEST_PATH.open("r", encoding="utf-8-sig") as file:
-        manifest = yaml.safe_load(file) or {}
-
-    agent = manifest.get("agent", {}) or {}
-    server = manifest.get("server", {}) or {}
-    ace = manifest.get("ace", {}) or {}
-    auth = manifest.get("auth", {}) or {}
-
-    delegations = {
-        str(capability): DelegationTarget(
-            capability=str(capability),
-            card_url=str(target.get("card_url", "") or ""),
-            audience=str(target.get("audience", "") or ""),
-        )
-        for capability, target in (manifest.get("delegations", {}) or {}).items()
-        if isinstance(target, dict) and target.get("card_url")
-    }
-
-    skills = tuple(
-        SkillConfig(
-            id=str(skill["id"]),
-            name=str(skill["name"]),
-            description=str(skill.get("description", "")),
-            tags=tuple(str(t) for t in skill.get("tags", [])),
-            examples=tuple(str(e) for e in skill.get("examples", [])),
-        )
-        for skill in manifest.get("skills", [])
-    )
-    if not skills:
-        raise ValueError("agent.yaml must declare at least one skill.")
-
-    return AgentConfig(
-        team_key=str(agent["team_key"]),
-        agent_key=str(agent["agent_key"]),
-        display_name=str(agent["display_name"]),
-        description=str(agent.get("description", "")),
-        version=str(agent.get("version", "0.1.0")),
-        host=str(server.get("host", "0.0.0.0")),
-        port=int(server.get("port", 3100)),
-        skills=skills,
-        data=dict(manifest.get("data", {}) or {}),
-        ace_base_url=str(ace.get("base_url", "http://localhost:3000")).rstrip("/"),
-        public_url=str(ace.get("public_url", "http://localhost:3100")).rstrip("/"),
-        permission=str(ace.get("permission", "chat")),
-        allowed_roles=tuple(str(r) for r in ace.get("allowed_roles", [])),
-        retrieval_mode=(str(ace["retrieval_mode"]) if ace.get("retrieval_mode") else None),
-        knowledge_sources=tuple(str(s) for s in ace.get("knowledge_sources", [])),
-        delegations=delegations,
-        auth=AgentAuthSettings(
-            enabled=bool(auth.get("enabled", False)),
-            tenant_id=str(auth.get("tenant_id", "") or ""),
-            audience=str(auth.get("audience", "") or ""),
-            authority=str(
-                auth.get("authority") or "https://login.microsoftonline.com"
-            ).rstrip("/"),
-            issuer_override=str(auth.get("issuer", "") or ""),
-            jwks_url_override=str(auth.get("jwks_url", "") or ""),
-        ),
-    )
+    return AgentConfigFactory().build()

@@ -54,28 +54,36 @@ A2A/
 └── AAAS/ · AAAS.zip            # original source extract — unused now, deletable
 ```
 
-## The agents
+## The agents (7 — routed by question, no supervisor)
 
-| Agent (team/key) | Port | Skills | Data scope |
-|---|---|---|---|
-| **Scheduling** (clinical_care/scheduling) v0.2.0 | 3100 | schedule_appointment, check_availability | none — delegates insurance checks to Pay Ops (envelope + referenceTaskIds); versioned prompts `booking_ack`, `delegation_reason` |
-| **Insurance** (pay_ops/insurance) | 3200 | verify_insurance, appeal_claim | none — proves received envelope (actor/tenant/delegated_from) |
-| **General Assistant** (ace_platform/general) | 3300 | general_help, access_overview | none — lists the caller's role-scoped agents via the capability catalog |
-| **File Q&A** (ace_platform/file_qa) | 3400 | file_question_answering | session-strict: ONLY files uploaded in the caller's chat session (📎 in composer → markitdown[all]) |
-| **Policy Library** (clinical_care/sharepoint_qa) | 3500 | policy_question_answering | `sharepoint:policies` — loaded via `POST /api/v1/knowledge/ingest/sharepoint` |
-| **Claims Archive** (pay_ops/blob_qa) | 3600 | claims_document_answering | `blob:claims` — loaded via `POST /api/v1/knowledge/ingest/blob` |
-| **SMS Outreach** (clinical_care/sms_outreach) | 3700 | send_sms_notification | one-way patient SMS via ACE Twilio capability (creds stay in ACE, opt-outs enforced centrally) |
-| **Benefits** (hr_benefits/benefits) | 3800 | benefits_question_answering | none yet — Teams-channel opt-in example: `data.channels.teams.{enabled, webhook_secret}` in its agent.yaml → reachable at `/channels/teams/benefits/messages`; signed-in Teams users' AAD id drives RBAC |
+| Agent (team/key) | Port | Character |
+|---|---|---|
+| **General Assistant** (ace_platform/general) | 3300 | Explains ACE + role-scoped "what can I access". The router's terminal fallback — never answers other teams' domains, never re-routes |
+| **File Q&A** (ace_platform/file_qa) | 3400 | STRICT session-scoped: answers only from files uploaded in the caller's chat session (📎 in composer) — nothing else, ever |
+| **Policy & Procedure** (clinical_care/policy_procedure) | 3500 | Retrieval agent over `sharepoint:policies` (ingested via Data Onboarding) |
+| **SMS** (clinical_care/sms) | 3700 | CHANNEL-ONLY (not on chat UI): replies to inbound patient texts + sends outreach via ACE capability |
+| **Benefits** (hr_benefits/benefits) | 3800 | Retrieval agent over benefits docs; Teams opt-in — reachable at `/channels/teams/benefits/messages` with the team's webhook secret |
+| **eConsult** (clinical_care/econsult) | 3900 | Retrieval agent over the eConsult knowledge base |
+| **GDA** (data_analytics/gda) | 4000 | LIVE Databricks answers via Genie capability (team's connection + space) — data never leaves Databricks |
 
-Every agent: identical scaffold (`agent.yaml` + config/auth/card/main/executor +
-`ace-agent-kit`), serves its AgentCard at `/.well-known/agent-card.json`,
-registers with ACE (card validated, Casbin policies auto-seeded from
-`allowed_roles`, immutable version snapshot recorded), and is enforced twice —
-`agent:<key> chat` to reach it, `knowledge:<source> read` per source per role.
-Prompts are team-authored in `agent.yaml` (`prompts:` name → version+content),
-used at runtime via the kit `PromptStore`; ACE records them per agent version
-(`GET /api/v1/admin/agents/{key}/versions`, `POST .../versions/{v}/activate`
-to roll back).
+Retired: scheduling+insurance live on as `Agents/_template_delegation/` (the
+delegation reference); blob agent superseded by parameterized ingestion.
+`Agents/_template/` is the scaffold every new team copies.
+
+Every agent: identical scaffold — env-invariant `agent.yaml` (identity,
+skills + routing examples, versioned prompts) + `config/env/{local,dev,uat,
+prd}.yaml` (same keys everywhere; local hardcodes, cloud uses `lookup:` Key
+Vault) + app/{config,auth,card,main,executor}. On startup each agent
+**registers itself** with ACE (kit `AgentRegistrar` + its team's token):
+card validated, Casbin policies seeded, version snapshotted, and its skill
+examples embedded into the **route index** — so the question router knows it
+immediately, with cross-agent overlap warnings at registration. Enforcement
+is layered: `agent:<key> chat` to reach it, `knowledge:<source> read` per
+role, AND the source registry's agent binding (only agents the owning team
+bound to a source can retrieve from it). From the UI, questions route
+directly by similarity (one embedding + one pgvector lookup — no supervisor,
+no LLM hop); ambiguous questions get one-tap disambiguation chips; questions
+matching an inaccessible agent get the polite contact-the-team refusal.
 
 ## Setup with uv — full install commands
 
@@ -113,56 +121,41 @@ Run each block in its own terminal, from the folder shown. Order: ACE first,
 then agents, then frontend.
 
 ```powershell
-# 1. ACE control plane — auth, RBAC, chat API, registry, audit   (A2A\ACE)
+# 1. ACE control plane — auth, RBAC, router, registry, channels   (A2A\ACE)
 $env:ACE_DB_POSTGRES_USER="postgres"; $env:ACE_DB_POSTGRES_PASSWORD="12345678"; $env:ACE_DB_POSTGRES_DBNAME="postgres"
 uv run python -m backend.app.app                    # :3000  (Swagger at /docs)
 
-# 2. Scheduling agent — books appointments, delegates to Insurance   (A2A\Agents\scheduling_agent)
-uv run python -m app.main                           # :3100
+# 2. ONE-TIME (admin): register teams + issue registration tokens
+#    POST /api/v1/admin/agents/teams  {"key":"clinical_care", ...}
+#    POST /api/v1/admin/agents/teams/clinical_care/tokens  -> shown ONCE
+#    put each token in the team's agents' config/env/local.yaml (ace.registration_token)
 
-# 3. Insurance agent — coverage checks for delegations   (A2A\Agents\insurance_agent)
-uv run python -m app.main                           # :3200
+# 3. Agents — same command in each folder; each SELF-REGISTERS on startup
+uv run python -m app.main
+#   general_agent          :3300     file_upload_agent   :3400
+#   policy_procedure_agent :3500     sms_agent           :3700
+#   benefits_agent         :3800     econsult_agent      :3900
+#   gda_agent              :4000
+# then activate once (admin): PATCH /api/v1/admin/agents/{key}/status {"status":"active"}
 
-# 4. General assistant — safe Q&A + "what can I access"   (A2A\Agents\general_agent)
-uv run python -m app.main                           # :3300
-
-# 5. File Q&A agent — answers only from your session uploads   (A2A\Agents\file_upload_agent)
-uv run python -m app.main                           # :3400
-
-# 6. Policy Library agent — SharePoint-sourced answers   (A2A\Agents\sharepoint_agent)
-uv run python -m app.main                           # :3500
-
-# 7. Claims Archive agent — blob-sourced answers   (A2A\Agents\blob_agent)
-uv run python -m app.main                           # :3600
-
-# 7b. SMS Outreach agent — one-way patient notifications   (A2A\Agents\sms_outreach_agent)
-uv run python -m app.main                           # :3700
-
-# 7c. Benefits agent — Teams-enabled HR benefits Q&A   (A2A\Agents\benefits_agent)
-uv run python -m app.main                           # :3800
-
-# 8. Chat + canvas UI   (A2A\ACE\frontend)
-npm run dev                                         # :5173 → open in browser, Entra login
-
-# One-time per agent (after it's running): register + activate with ACE
-uv run python -m app.register --cookie "<ace_session>" --csrf "<csrf_token>"
-# then: PATCH /api/v1/admin/agents/{agent_key}/status {"status":"active"}
+# 4. Chat + canvas UI   (A2A\ACE\frontend)
+npm run dev                                         # :5173 → Entra login → leave
+                                                    # assistant on "Auto" — questions
+                                                    # route directly to the right agent
 
 # Health check after credential changes (admin session required)
 # GET http://localhost:3000/api/v1/admin/health/integrations
 ```
 
 **Channel webhooks** (separate from UI chat, both authenticated):
-Twilio SMS → `POST /api/v1/channels/sms/inbound` (X-Twilio-Signature) with
-delivery updates at `/status`. Microsoft Teams is **opt-in per agent**: a team
-declares `data.channels.teams.{enabled, webhook_secret}` in their agent.yaml
-and points their Teams Outgoing Webhook at
-`POST /api/v1/channels/teams/<agent_key>/messages` (HMAC over raw body with
-their secret, inline reply; agents without the block 404 on that channel;
-manifest template: `teams-app-manifest.json`). The platform default route
-`/channels/teams/messages` uses the yaml secret. Inbound messages route
-through the same agents with channel roles (`sms_patient`, `teams_user` —
-Teams users' AAD object id adds their Entra-provisioned roles); bodies and
+Twilio SMS → `POST /api/v1/channels/sms/inbound` (X-Twilio-Signature) —
+inbound texts are answered by the channel-only **sms** agent; delivery
+updates at `/status`. Microsoft Teams is **per-agent ONLY**: a team sets
+`channels.teams.{enabled, webhook_secret}` in their env config and points
+their Teams Outgoing Webhook at
+`POST /api/v1/channels/teams/<agent_key>/messages` (HMAC with THEIR secret;
+non-opted-in agents 404; there is no platform-wide Teams route). Teams
+users' AAD object id adds their Entra-provisioned roles; bodies and
 numbers/ids are AES-GCM encrypted at rest (`security.field_encryption_key`).
 
 First run in any folder: `uv sync` (agents) / `npm install` (frontend).

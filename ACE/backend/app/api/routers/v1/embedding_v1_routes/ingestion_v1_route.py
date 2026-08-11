@@ -6,9 +6,14 @@ from .....dto.embedding import (
     IngestJobStatusResponse,
     IngestResponse,
     IngestSharePointRequest,
+    IngestSourceRequest,
     IngestTextRequest,
+    KnowledgeSourceModel,
 )
+from .....entity.knowledge import KnowledgeSourceEntity
+from .....services.connections import ConnectionService
 from .....services.knowledge.ingestion_job_service import get_ingestion_job_service
+from .....services.knowledge.source_registry_service import SourceRegistryService
 from .....security.dependencies import require_csrf
 from .....security.rate_limiter import get_rate_limiter
 from .....security.session import SessionContext
@@ -18,10 +23,13 @@ from .....services.knowledge.sharepoint_ingestion_service import (
     SharePointIngestionService,
 )
 from .....utils.common.logger import Logger
+from .....utils.errors import ValidationError
 from ....dependencies import (
     provide_blob_ingestion_service,
+    provide_connection_service,
     provide_ingestion_service,
     provide_sharepoint_ingestion_service,
+    provide_source_registry_service,
 )
 
 logger = Logger(__name__).get_logger()
@@ -153,6 +161,131 @@ async def ingest_blob(
         data=IngestJobAcceptedResponse(job_id=job_id),
         message="Blob ingestion started.",
     )
+
+
+def _to_source_model(source: KnowledgeSourceEntity) -> KnowledgeSourceModel:
+    return KnowledgeSourceModel(
+        source_name=source.source_name,
+        owner_team_key=source.owner_team_key,
+        connection_name=source.connection_name,
+        description=source.description,
+        status=source.status,
+        location=dict(source.location or {}),
+        chunking=dict(source.chunking or {}),
+        embedding=dict(source.embedding or {}),
+        agents=list(source.agents or []),
+        roles=list(source.roles or []),
+        created_at=source.created_at,
+        updated_at=source.updated_at,
+    )
+
+
+@ingestion_v1_router.post(
+    "/ingest/source",
+    response_model=ApiEnvelope[IngestJobAcceptedResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def ingest_source(
+    payload: IngestSourceRequest,
+    context: SessionContext = Depends(require_csrf),
+    sharepoint: SharePointIngestionService = Depends(provide_sharepoint_ingestion_service),
+    blob: BlobIngestionService = Depends(provide_blob_ingestion_service),
+    connections: ConnectionService = Depends(provide_connection_service),
+    source_registry: SourceRegistryService = Depends(provide_source_registry_service),
+) -> ApiEnvelope[IngestJobAcceptedResponse]:
+    """The ONE parameterized ingestion entry point: the team names their
+    connection, location, chunking, embedding, and access (bound agents +
+    reader roles). ACE provides the pipeline; nothing team-specific lives in
+    ACE config."""
+    await get_rate_limiter().check(context.actor_id)
+
+    connection = await connections.resolve_config(
+        tenant_id=context.tenant_id, name=payload.connection
+    )
+    connection_type = str(connection.get("connection_type") or "")
+    if connection_type not in ("sharepoint", "storage_blob"):
+        raise ValidationError(
+            f"Connection type '{connection_type}' is not an ingestion source. "
+            "Databricks data is queried live via the genie capability, not ingested.",
+            details={"connection": payload.connection},
+        )
+    if connection.get("team_key") != payload.team_key.strip().lower():
+        raise ValidationError(
+            "Connection is owned by another team.",
+            details={"connection": payload.connection},
+        )
+
+    prefix = "sharepoint" if connection_type == "sharepoint" else "blob"
+    bare_name = payload.source_name.strip().lower().split(":", 1)[-1]
+    full_source_name = f"{prefix}:{bare_name}"
+
+    source, policies_seeded = await source_registry.register_source(
+        context=context,
+        source_name=full_source_name,
+        owner_team_key=payload.team_key,
+        connection_name=payload.connection,
+        description=payload.description,
+        location=dict(payload.location),
+        chunking=payload.chunking.model_dump(),
+        embedding=payload.embedding.model_dump(),
+        agents=list(payload.access.agents),
+        roles=list(payload.access.roles),
+    )
+
+    location = dict(payload.location)
+    chunking_strategy = payload.chunking.strategy
+
+    async def _work() -> dict:
+        if connection_type == "sharepoint":
+            result = await sharepoint.ingest_folder(
+                context=context,
+                source_name=bare_name,
+                site_path=str(location.get("site_path", "")),
+                drive_name=str(location.get("drive_name", "")),
+                folder_path=str(location.get("folder_path", "")),
+                chunking_strategy=chunking_strategy,
+                connection_config=connection,
+            )
+        else:
+            result = await blob.ingest_container(
+                context=context,
+                source_name=bare_name,
+                container=str(location.get("container", "")),
+                prefix=str(location.get("prefix", "")),
+                chunking_strategy=chunking_strategy,
+                connection_config=connection,
+            )
+        return {
+            "knowledge_source": result.knowledge_source,
+            "files_ingested": result.files_ingested,
+            "files_skipped": result.files_skipped,
+            "chunk_count": result.chunk_count,
+            "policies_seeded": policies_seeded,
+        }
+
+    job_id = await get_ingestion_job_service().start(
+        context=context,
+        kind=connection_type,
+        source_name=source.source_name,
+        work=_work,
+    )
+    return ApiEnvelope(
+        data=IngestJobAcceptedResponse(job_id=job_id),
+        message="Ingestion started; source registered with agent bindings and reader roles.",
+    )
+
+
+@ingestion_v1_router.get(
+    "/sources",
+    response_model=ApiEnvelope[list[KnowledgeSourceModel]],
+)
+async def list_sources(
+    team_key: str | None = None,
+    context: SessionContext = Depends(require_csrf),
+    source_registry: SourceRegistryService = Depends(provide_source_registry_service),
+) -> ApiEnvelope[list[KnowledgeSourceModel]]:
+    sources = await source_registry.list_sources(context=context, team_key=team_key)
+    return ApiEnvelope(data=[_to_source_model(s) for s in sources])
 
 
 @ingestion_v1_router.post(

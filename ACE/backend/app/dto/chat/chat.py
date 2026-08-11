@@ -24,6 +24,11 @@ class ChatTurnResponse(StrictBaseModel):
         default=None,
         description="Present when access was denied: type, message, owning team, contact.",
     )
+    disambiguation: dict[str, Any] | None = Field(
+        default=None,
+        description="Present when the router needs a choice: message + candidates "
+        "[{agent_key, display_name}] — resend with the chosen agent.",
+    )
 
 class CreateSessionRequest(StrictBaseModel):
     title: str = Field(default="New Chat", max_length=120)

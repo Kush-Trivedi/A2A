@@ -21,11 +21,6 @@ database:
     redis_url: "redis://localhost:6379/0"
     nonce_backend: "memory"
 
-databricks:
-  host: "localhost"
-  token: "your_token"
-  timeout_seconds: 300
-
 langfuse:
   host: "localhost"
   public_key: "your_api_key"
@@ -43,7 +38,7 @@ twilio:
     phone_number: "your_outbound_phone_number"
   tenant_id: "default"
   messaging:
-    default_agent: "general"
+    default_agent: "sms"
     inbound_roles:
       - "sms_patient"
     opt_out_keywords: ["stop", "stopall", "unsubscribe", "quit", "optout", "opt out"]
@@ -75,26 +70,11 @@ microsoft:
     api_audience: "your_api_audience"
     refresh_token_backend: "your_refresh_token_backend"
     refresh_token_ttl_seconds: 2592000
-  sharepoint:
-    hostname: "your_sharepoint_hostname"
-    tenant_id: "your_sharepoint_tenant_id"
-    client_id: "your_sharepoint_client_id"
-    client_secret: "your_sharepoint_client_secret"
-  microsoft_teams:
-    outgoing_webhook_secret: "your_outgoing_webhook_secret"
-    agent: "your_agent"
-    agent_timeout_seconds: 30
-    tenant_id: "default"
-    default_roles:
-      - "teams_user"
   azure:
     managed_identity_client_id: ""
     keyvault:
       keyvault_url: "your_keyvault_url"
       keyvault_secret_prefix: "your_keyvault_secret_prefix"
-    storage_account:
-      storage_account_url: "your_storage_account_url"
-      storage_container_name: "your_storage_container_name"
     azure_foundry:
       base_endpoint: "your_base_endpoint"
       api_key: "your_api_key"
@@ -169,8 +149,14 @@ knowledge:
     upload_source: "upload"
 
 agents:
-  external_paths: []
-  knowledge_agent_sources: []
   a2a_request_timeout_seconds: 120
   a2a_streaming_enabled: true
   card_cache_ttl_seconds: 300
+  router:
+    mode: "auto"            # auto = dense when embeddings configured, else sparse FTS
+    threshold: 0.42
+    sparse_threshold: 0.03  # FTS ts_rank floor for the pre-LLM-creds degraded mode         # min similarity to dispatch to a matched agent
+    margin: 0.06            # top1-top2 gap below this -> ask the user (disambiguation)
+    switch_margin: 0.12     # extra gap a NEW agent needs to steal a sticky session
+    overlap_threshold: 0.86 # registration-time cross-agent collision warning
+    fallback_agent: "general"

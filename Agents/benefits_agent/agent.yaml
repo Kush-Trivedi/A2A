@@ -1,67 +1,33 @@
-# Team-owned agent manifest — HR Benefits team.
+# ENV-INVARIANT manifest — HR Benefits team. Runtime values: config/env/<ENV>.yaml
 agent:
   team_key: "hr_benefits"
   agent_key: "benefits"
   display_name: "Benefits Agent"
-  description: "Answers employee benefits questions (plans, enrollment, coverage)."
-  version: "0.1.0"
-
-server:
-  host: "0.0.0.0"
-  port: 3800
+  description: "Answers employee benefits questions (plans, enrollment, coverage) from the ingested benefits knowledge base. Also available in Microsoft Teams."
+  version: "1.0.0"
 
 skills:
   - id: "benefits_question_answering"
     name: "Benefits question answering"
-    description: "Answer employee questions about benefits plans, enrollment windows, and coverage."
-    tags: ["benefits", "hr", "enrollment"]
+    description: "Answer employee questions about benefits plans, enrollment windows, dental/vision/medical coverage, and dependents."
+    tags: ["benefits", "hr", "enrollment", "coverage"]
     examples:
       - "When is open enrollment?"
       - "Does my plan cover dental?"
+      - "How do I add my spouse to my insurance?"
+      - "What is the difference between the PPO and HMO plans?"
 
-# Team-owned, versioned prompts — the team defines the agent's voice here.
 prompts:
   system:
     version: "1.0.0"
     content: |
-      You are the Benefits Agent for hospital employees. Answer ONLY benefits
-      questions (plans, enrollment, coverage). For anything else, direct the
-      user to the right assistant.
+      You are {display_name} for hospital employees. Answer ONLY benefits
+      questions from the documents provided in context, citing sources. For
+      anything else, direct the user to the right assistant.
   fallback:
     version: "1.0.0"
     content: |
       [{display_name}] I can help with benefits plans, enrollment windows, and
-      coverage questions. You asked: {question}. (Benefits knowledge base
-      integration pending — connect a knowledge source or LLM deployment.)
-
-# Team-owned channel opt-in. Microsoft Teams exposure is a CHOICE: only
-# agents with channels.teams.enabled here are reachable at
-# /api/v1/channels/teams/<agent_key>/messages — everything else 404s on that
-# channel. webhook_secret is what Teams generated for this team's Outgoing
-# Webhook. Flows to registry team_config at registration; omit the whole
-# block for a chat-UI-only agent.
-data:
-  channels:
-    teams:
-      enabled: true
-      webhook_secret: "your_teams_webhook_secret"
+      coverage questions. You asked: {question}.
 
 delegations: {}
-
-auth:
-  enabled: false
-  tenant_id: "your_tenant_id"
-  audience: "your_agent_app_id_uri"
-  authority: "https://login.microsoftonline.com"
-  issuer: ""
-  jwks_url: ""
-
-ace:
-  base_url: "http://localhost:3000"
-  public_url: "http://localhost:3800"
-  permission: "chat"
-  allowed_roles:
-    - "developer"
-    - "teams_user"
-  retrieval_mode: "sparse"
-  knowledge_sources: []

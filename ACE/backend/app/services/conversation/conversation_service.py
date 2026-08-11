@@ -1,9 +1,8 @@
+import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from ...entity.chat.chat_message_entity import ChatMessageEntity
 from ...entity.chat.chat_session_entity import ChatSessionEntity
-from ...llm.azure_foundry.ace_azure_foundry import AceAzureFoundry
-from ...prompts import PromptRepository, get_prompt_repository
 from ...security.authorization.enforcer import CasbinEnforcer, get_casbin_enforcer
 from ...security.authorization.context_attrs import AuthorizationContextBuilder
 from ...security.session import SessionContext
@@ -13,12 +12,14 @@ from ace_agent_kit import ContextEnvelope
 
 from ..a2a import A2AClientService, A2AStreamEvent, get_a2a_client_service
 from ..a2a.dispatch_auditor import A2ADispatchAuditor
-from ..agents import AgentDefinition, AgentRegistry, get_agent_registry
+from ..agents import AgentDefinition
+from ..agents.question_router_service import (
+    QuestionRouterService,
+    RouteAction,
+    get_question_router_service,
+)
 from ..agents.registry_service import AgentRegistryService, get_agent_registry_service
-from ..embedding.embedding_service import EmbeddingService, get_embedding_service
-from ..knowledge import KnowledgeChunk
 from ..knowledge.gateway import KnowledgeGateway, get_knowledge_gateway
-from ..knowledge.settings import KnowledgeSettings, get_knowledge_settings
 from .conversation_store import ROLE_ASSISTANT, ROLE_USER, ConversationStore, get_conversation_store
 from .out_of_scope_responder import (
     OutOfScopeResponder,
@@ -27,8 +28,6 @@ from .out_of_scope_responder import (
 )
 
 logger = Logger(__name__).get_logger()
-
-_HISTORY_TURN_LIMIT = 12
 
 
 @dataclass(frozen=True)
@@ -47,34 +46,27 @@ class ChatTurnResult:
     answer: str
     sources: list[RetrievedSource] = field(default_factory=list)
     refusal: dict | None = None
+    disambiguation: dict | None = None
 
 
 class ConversationService:
     def __init__(
         self,
         store: ConversationStore | None = None,
-        registry: AgentRegistry | None = None,
         gateway: KnowledgeGateway | None = None,
-        embedding: EmbeddingService | None = None,
-        llm: AceAzureFoundry | None = None,
-        settings: KnowledgeSettings | None = None,
-        prompts: PromptRepository | None = None,
         enforcer: CasbinEnforcer | None = None,
         a2a_client: A2AClientService | None = None,
         registry_service: AgentRegistryService | None = None,
         out_of_scope: OutOfScopeResponder | None = None,
+        router: QuestionRouterService | None = None,
     ) -> None:
         self._store = store or get_conversation_store()
-        self._registry = registry or get_agent_registry()
         self._gateway = gateway or get_knowledge_gateway()
-        self._embedding = embedding or get_embedding_service()
-        self._llm = llm or AceAzureFoundry()
-        self._settings = settings or get_knowledge_settings()
-        self._prompts = prompts or get_prompt_repository()
         self._enforcer = enforcer or get_casbin_enforcer()
         self._a2a = a2a_client or get_a2a_client_service()
         self._registry_service = registry_service or get_agent_registry_service()
         self._out_of_scope = out_of_scope or get_out_of_scope_responder()
+        self._router = router or get_question_router_service()
 
     async def list_sessions(self, *, context: SessionContext) -> list[ChatSessionEntity]:
         return await self._store.list_sessions(context=context)
@@ -118,20 +110,16 @@ class ConversationService:
         )
         if prepared.refusal is not None:
             return await self._finish_refused_turn(context=context, prepared=prepared)
+        if prepared.disambiguation is not None:
+            return await self._finish_disambiguation_turn(context=context, prepared=prepared)
 
         answer_parts: list[str] = []
-        if prepared.is_a2a:
-            async for event in self._a2a_events(context=context, prepared=prepared):
-                if event.kind == "text" and event.text:
-                    answer_parts.append(event.text)
-        else:
-            try:
-                async for token in self._llm.astream_chat(messages=prepared.messages):
-                    answer_parts.append(token)
-            except Exception as exc:  # noqa: BLE001
-                raise LLMError(cause=exc) from exc
+        async for event in self._a2a_events(context=context, prepared=prepared):
+            if event.kind == "text" and event.text:
+                answer_parts.append(event.text)
 
-        answer = "\n".join(answer_parts).strip() if prepared.is_a2a else "".join(answer_parts).strip()
+        # Agents stream token chunks — concatenate verbatim, never re-join.
+        answer = "".join(answer_parts).strip()
         assistant = await self._persist_answer(
             context=context, session_id=prepared.session_id, agent=prepared.agent,
             answer=answer, sources=prepared.sources,
@@ -182,31 +170,37 @@ class ConversationService:
             }
             return
 
-        answer_parts: list[str] = []
-        if prepared.is_a2a:
-            try:
-                async for event in self._a2a_events(context=context, prepared=prepared):
-                    if event.kind == "text" and event.text:
-                        answer_parts.append(event.text)
-                        yield {"event": "token", "data": {"text": event.text}}
-                    elif event.kind == "artifact" and event.artifact is not None:
-                        yield {"event": "artifact", "data": event.artifact.to_dict()}
-                    elif event.kind == "state":
-                        yield {"event": "state", "data": {"state": event.state}}
-            except AppError as exc:
-                yield {"event": "error", "data": {"code": exc.code, "message": exc.client_message()}}
-                return
-        else:
-            try:
-                async for token in self._llm.astream_chat(messages=prepared.messages):
-                    answer_parts.append(token)
-                    yield {"event": "token", "data": {"text": token}}
-            except Exception as exc:  # noqa: BLE001
-                logger.error("chat stream failed", extra={"error": str(exc)}, exc_info=True)
-                yield {"event": "error", "data": {"code": "llm_error", "message": "The model response failed."}}
-                return
+        if prepared.disambiguation is not None:
+            result = await self._finish_disambiguation_turn(
+                context=context, prepared=prepared
+            )
+            yield {"event": "disambiguation", "data": prepared.disambiguation}
+            yield {
+                "event": "done",
+                "data": {
+                    "session_id": result.session_id,
+                    "user_message_id": prepared.user_message_id,
+                    "message_id": result.message_id,
+                },
+            }
+            return
 
-        answer = "\n".join(answer_parts).strip() if prepared.is_a2a else "".join(answer_parts).strip()
+        answer_parts: list[str] = []
+        try:
+            async for event in self._a2a_events(context=context, prepared=prepared):
+                if event.kind == "text" and event.text:
+                    answer_parts.append(event.text)
+                    yield {"event": "token", "data": {"text": event.text}}
+                elif event.kind == "artifact" and event.artifact is not None:
+                    yield {"event": "artifact", "data": event.artifact.to_dict()}
+                elif event.kind == "state":
+                    yield {"event": "state", "data": {"state": event.state}}
+        except AppError as exc:
+            yield {"event": "error", "data": {"code": exc.code, "message": exc.client_message()}}
+            return
+
+        # Agents stream token chunks — concatenate verbatim, never re-join.
+        answer = "".join(answer_parts).strip()
         assistant = await self._persist_answer(
             context=context, session_id=prepared.session_id, agent=prepared.agent,
             answer=answer, sources=prepared.sources,
@@ -225,16 +219,12 @@ class ConversationService:
         session_id: str
         user_message_id: str
         agent: AgentDefinition
-        messages: list[dict[str, str]]
         sources: list[RetrievedSource]
         question: str = ""
         card_url: str | None = None
         auth_audience: str | None = None
         refusal: RefusalResponse | None = None
-
-        @property
-        def is_a2a(self) -> bool:
-            return bool(self.card_url)
+        disambiguation: dict | None = None
 
     async def _prepare_turn(
         self,
@@ -248,17 +238,53 @@ class ConversationService:
         if not question:
             raise BadRequestError("Message must not be empty.")
 
-        agent, card_url, auth_audience = await self._resolve_agent(
-            context=context, agent_id=agent_id
-        )
-
+        requested = (agent_id or "").strip().lower()
         refusal: RefusalResponse | None = None
-        try:
-            await self._check_agent_permission(context=context, agent=agent)
-        except PermissionDeniedError:
-            refusal = await self._out_of_scope.for_denied_agent(
-                tenant_id=context.tenant_id, agent_key=agent.id
+        disambiguation: dict | None = None
+        agent: AgentDefinition | None = None
+        card_url: str | None = None
+        auth_audience: str | None = None
+
+        if not requested or requested == "auto":
+            # Supervisor-free routing: one embedding + one lookup decides the
+            # agent; an explicit catalog pick (agent_id set) always wins.
+            sticky = await self._sticky_agent(context=context, session_id=session_id)
+            decision = await self._router.route(
+                context=context, question=question, sticky_agent=sticky
             )
+            if decision.action is RouteAction.REFUSAL_INACCESSIBLE and decision.matched_agent:
+                refusal = await self._out_of_scope.for_denied_agent(
+                    tenant_id=context.tenant_id, agent_key=decision.matched_agent
+                )
+                agent = AgentDefinition(
+                    id=decision.matched_agent,
+                    display_name=decision.matched_agent,
+                    description="",
+                )
+            elif decision.action is RouteAction.DISAMBIGUATE:
+                disambiguation = {
+                    "message": "I can route this to more than one assistant — which one?",
+                    "candidates": [
+                        {"agent_key": c.agent_key, "display_name": c.display_name}
+                        for c in decision.candidates
+                    ],
+                }
+                agent = AgentDefinition(
+                    id="router", display_name="Assistant Router", description=""
+                )
+            else:
+                requested = decision.agent_key or self._router.fallback_agent
+
+        if agent is None:
+            agent, card_url, auth_audience = await self._resolve_agent(
+                context=context, agent_id=requested
+            )
+            try:
+                await self._check_agent_permission(context=context, agent=agent)
+            except PermissionDeniedError:
+                refusal = await self._out_of_scope.for_denied_agent(
+                    tenant_id=context.tenant_id, agent_key=agent.id
+                )
 
         if session_id:
             session = await self._store.get_owned_session(
@@ -270,33 +296,50 @@ class ConversationService:
             )
         resolved_session_id = session.id
 
-        history = await self._store.list_messages(
-            context=context, session_id=resolved_session_id
-        )
-
         user_message = await self._store.add_message(
             context=context, session_id=resolved_session_id,
             role=ROLE_USER, content=question,
         )
 
-        if refusal is not None or card_url:
-            messages, sources = [], []
-        else:
-            messages, sources = await self._build_generation(
-                context=context, agent=agent, history=history,
-                question=question, session_id=resolved_session_id,
-            )
+        # Registered A2A agents produce every answer — ACE does no local
+        # generation. History stays persisted for the UI; the agent gets
+        # session continuity via context_id.
         return self._PreparedTurn(
             session_id=resolved_session_id,
             user_message_id=user_message.id,
             agent=agent,
-            messages=messages,
-            sources=sources,
+            sources=[],
             question=question,
-            card_url=None if refusal is not None else card_url,
+            card_url=None if (refusal is not None or disambiguation is not None) else card_url,
             auth_audience=auth_audience,
             refusal=refusal,
+            disambiguation=disambiguation,
         )
+
+    async def _sticky_agent(
+        self, *, context: SessionContext, session_id: str | None
+    ) -> str | None:
+        """The agent already carrying this conversation — follow-ups stay
+        with it unless a new question clearly belongs to another agent."""
+        if not session_id:
+            return None
+        try:
+            messages = await self._store.list_messages(
+                context=context, session_id=session_id
+            )
+        except AppError:
+            return None
+        for message in reversed(messages):
+            if message.role != ROLE_ASSISTANT:
+                continue
+            try:
+                metadata = json.loads(message.metadata_json or "{}")
+            except ValueError:
+                continue
+            agent_key = str(metadata.get("agent_id") or "")
+            if agent_key and agent_key != "router":
+                return agent_key
+        return None
 
     async def _resolve_agent(
         self, *, context: SessionContext, agent_id: str | None
@@ -316,20 +359,19 @@ class ConversationService:
                 details={"requested_agent_id": requested or None}
             )
 
-        defination = AgentDefinition(
+        definition = AgentDefinition(
             id=registered.agent_key,
             display_name=registered.display_name,
             description=registered.description,
             aliases=tuple(registered.aliases or []),
             knowledge_sources=tuple(registered.knowledge_sources or []),
-            include_session_uploads=False,
             permission=registered.permission,
             retrieval_mode=registered.retrieval_mode,
         )
         auth_audience = str(
             (registered.team_config or {}).get("auth_audience") or ""
         ) or None
-        return defination, registered.card_url, auth_audience
+        return definition, registered.card_url, auth_audience
 
     async def _check_agent_permission(
         self, *, context: SessionContext, agent: AgentDefinition
@@ -348,21 +390,6 @@ class ConversationService:
                 details={"agent_id": agent.id, "action": agent.permission}
             )
 
-    async def _build_generation(
-        self,
-        *,
-        context: SessionContext,
-        agent: AgentDefinition,
-        history: list[ChatMessageEntity],
-        question: str,
-        session_id: str,
-    ) -> tuple[list[dict[str, str]], list[RetrievedSource]]:
-        chunks = await self._retrieve(context=context, agent=agent, question=question,
-                                      session_id=session_id)
-        messages = self._build_messages(agent=agent, history=history, chunks=chunks,
-                                        question=question)
-        return messages, self._dedupe_sources(chunks)
-
     async def edit_message(
         self,
         *,
@@ -379,7 +406,7 @@ class ConversationService:
         edited = await self._store.edit_user_message(
             context=context, session_id=session_id, message_id=message_id, content=question,
         )
-        agent, card_url, auth_audience = self._registry.resolve(
+        agent, card_url, auth_audience = await self._resolve_agent(
             context=context, agent_id=edited.previous_agent_id
         )
         await self._check_agent_permission(context=context, agent=agent)
@@ -390,7 +417,6 @@ class ConversationService:
                 session_id=session_id,
                 user_message_id=edited.new_message.id,
                 agent=agent,
-                messages=[],
                 sources=[],
                 question=question,
                 card_url=card_url,
@@ -429,100 +455,6 @@ class ConversationService:
             context=context, session_id=session_id, message_id=message_id, feedback=feedback,
         )
 
-    async def _retrieve(
-        self,
-        *,
-        context: SessionContext,
-        agent: AgentDefinition,
-        question: str,
-        session_id: str,
-    ) -> list[KnowledgeChunk]:
-        if not agent.uses_knowledge():
-            return []
-        try:
-            embedding = await self._embedding.embed_query(question)
-            return await self._gateway.retrieve(
-                context=context,
-                embedding=embedding,
-                requested_sources=agent.knowledge_sources,
-                session_id=session_id if agent.include_session_uploads else None,
-                query_text=question,
-                mode=agent.retrieval_mode or "",
-            )
-        except AppError:
-            raise
-        except Exception as exc:  # noqa: BLE001 — retrieval must not break chat
-            logger.error("retrieval failed; continuing without context",
-                         extra={"error": str(exc)}, exc_info=True)
-            return []
-
-    def _capabilities_block(self) -> str:
-        lines: list[str] = []
-        for agent in self._registry.list():
-            if agent.id in ("default",):
-                continue
-            desc = agent.description or agent.display_name
-            lines.append(f"- {agent.display_name}: {desc}")
-        if not lines:
-            return "- General assistance only."
-        return "\n".join(lines)
-
-    def _build_messages(
-        self,
-        *,
-        agent: AgentDefinition,
-        history: list[ChatMessageEntity],
-        chunks: list[KnowledgeChunk],
-        question: str,
-    ) -> list[dict[str, str]]:
-        system = None
-        if agent.prompt_name:
-            system = self._prompts.get(
-                agent.prompt_name, capabilities=self._capabilities_block()
-            )
-        if not system:
-            system = agent.system_prompt
-
-        if chunks:
-            context_block = "\n\n".join(
-                f"[Source: {c.source_name}]\n{c.content}" for c in chunks
-            )
-            grounded = self._prompts.get(
-                "chat.grounding", system=system, context=context_block
-            )
-            system = grounded or (
-                f"{system}\n\n--- Retrieved context ---\n{context_block}"
-            )
-        elif not agent.strict_grounding:
-            no_context = self._prompts.get("chat.no_context", system=system)
-            if no_context:
-                system = no_context
-
-        messages: list[dict[str, str]] = [{"role": "system", "content": system}]
-        for msg in history[-_HISTORY_TURN_LIMIT:]:
-            role = msg.role if msg.role in (ROLE_USER, ROLE_ASSISTANT) else ROLE_USER
-            messages.append({"role": role, "content": msg.content})
-        messages.append({"role": ROLE_USER, "content": question})
-        return messages
-
-    @staticmethod
-    def _dedupe_sources(chunks: list[KnowledgeChunk]) -> list[RetrievedSource]:
-        seen: set[str] = set()
-        sources: list[RetrievedSource] = []
-        for chunk in chunks:
-            if chunk.document_id in seen:
-                continue
-            seen.add(chunk.document_id)
-            sources.append(
-                RetrievedSource(
-                    document_id=chunk.document_id,
-                    source_name=chunk.source_name,
-                    knowledge_source=chunk.knowledge_source,
-                    score=chunk.score,
-                )
-            )
-        return sources
-
     async def _finish_refused_turn(
         self, *, context: SessionContext, prepared: "_PreparedTurn"
     ) -> ChatTurnResult:
@@ -552,6 +484,29 @@ class ConversationService:
             agent_id=prepared.agent.id,
             answer=refusal.message,
             refusal=refusal.to_dict(),
+        )
+
+    async def _finish_disambiguation_turn(
+        self, *, context: SessionContext, prepared: "_PreparedTurn"
+    ) -> ChatTurnResult:
+        payload = prepared.disambiguation or {}
+        candidate_names = " or ".join(
+            str(c.get("display_name", "")) for c in payload.get("candidates", [])
+        )
+        answer = str(payload.get("message") or f"Did you mean {candidate_names}?")
+        assistant = await self._store.add_message(
+            context=context,
+            session_id=prepared.session_id,
+            role=ROLE_ASSISTANT,
+            content=answer,
+            metadata={"agent_id": "router", "disambiguation": payload},
+        )
+        return ChatTurnResult(
+            session_id=prepared.session_id,
+            message_id=assistant.id,
+            agent_id="router",
+            answer=answer,
+            disambiguation=payload,
         )
 
     def _a2a_events(

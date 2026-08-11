@@ -1,5 +1,4 @@
-import asyncio
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +17,6 @@ from .security import (
     get_auth_settings,
 )
 from .security.authorization import get_casbin_enforcer
-from .services.agents.bootstrap_service import get_agent_bootstrap_service
 from .utils.common.log_redaction import install_log_redaction
 from .utils.common.logger import Logger
 
@@ -47,23 +45,12 @@ class ApplicationFactory:
             logger.info("Application startup: initializing database + authz")
             await initialize_database_lifecycle()
             await self._enforcer.initialize()
-            bootstrap = get_agent_bootstrap_service()
-            bootstrap_task = (
-                asyncio.create_task(
-                    bootstrap.reconcile_until_ready(),
-                    name="agent-registry-bootstrap"
-                )
-                if bootstrap.configured
-                else None
-            )
+            # Agents self-register on startup (kit AgentRegistrar with their
+            # team token) — ACE never pulls manifests. Same flow local & cloud.
             try:
                 yield
             finally:
                 logger.info("Application shutdown: releasing resources")
-                if bootstrap_task is not None:
-                    bootstrap_task.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await bootstrap_task
                 await self._enforcer.close()
                 await dispose_postgres()
 

@@ -46,11 +46,30 @@ class GenieService:
         self._factory = factory or get_workspace_client_factory()
 
     async def ask(self, *, space_id: str, question: str) -> GenieAnswer:
+        return await self._ask_validated(space_id=space_id, question=question, host="", token="")
+
+    async def ask_with_connection(
+        self, *, host: str, token: str, space_id: str, question: str
+    ) -> GenieAnswer:
+        """Team-connection variant: the workspace comes from the team's
+        registered databricks connection, not from ACE yaml."""
+        if not PlaceholderPolicy.is_configured(host) or not PlaceholderPolicy.is_configured(token):
+            raise ValidationError(
+                "The databricks connection is missing host/token. "
+                "Check the team's connection registration."
+            )
+        return await self._ask_validated(
+            space_id=space_id, question=question, host=host, token=token
+        )
+
+    async def _ask_validated(
+        self, *, space_id: str, question: str, host: str, token: str
+    ) -> GenieAnswer:
         normalized_space = (space_id or "").strip()
         if not PlaceholderPolicy.is_configured(normalized_space):
             raise ValidationError(
-                "A Genie space id is required. Set databricks.genie_space_id in "
-                "the team's agent.yaml data section (registry team_config).",
+                "A Genie space id is required. Set the genie_space in the "
+                "agent's databricks connection config.",
             )
         normalized_question = (question or "").strip()
         if not normalized_question:
@@ -58,7 +77,7 @@ class GenieService:
 
         try:
             return await asyncio.to_thread(
-                self._ask_blocking, normalized_space, normalized_question
+                self._ask_blocking, normalized_space, normalized_question, host, token
             )
         except (ValidationError, ExternalServiceError):
             raise
@@ -69,14 +88,21 @@ class GenieService:
                 exc_info=True,
             )
             raise ExternalServiceError(
-                "Genie query failed — check databricks.host/token and the team's genie_space_id.",
+                "Genie query failed — check the databricks connection and genie space.",
                 code="genie_query_failed",
                 details={"space_id": normalized_space},
                 cause=exc,
             ) from exc
 
-    def _ask_blocking(self, space_id: str, question: str) -> GenieAnswer:
-        genie = self._factory.get_client().genie
+    def _ask_blocking(
+        self, space_id: str, question: str, host: str = "", token: str = ""
+    ) -> GenieAnswer:
+        if host and token:
+            from databricks.sdk import WorkspaceClient
+
+            genie = WorkspaceClient(host=host, token=token).genie
+        else:
+            genie = self._factory.get_client().genie
         message = genie.start_conversation_and_wait(space_id, question)
 
         text_parts: list[str] = []

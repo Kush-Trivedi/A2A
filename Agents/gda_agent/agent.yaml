@@ -1,0 +1,33 @@
+# ENV-INVARIANT manifest — Data & Analytics team. Runtime values: config/env/<ENV>.yaml
+agent:
+  team_key: "data_analytics"
+  agent_key: "gda"
+  display_name: "GDA Agent"
+  description: "Answers data questions live from Databricks via the team's Genie space — admissions, census, utilization, revenue metrics with SQL and result tables."
+  version: "1.0.0"
+
+skills:
+  - id: "databricks_data_answering"
+    name: "Live data answers (Genie)"
+    description: "Answer analytical questions against the team's Databricks data via Genie: volumes, trends, metrics, breakdowns."
+    tags: ["data", "analytics", "databricks", "genie", "metrics"]
+    examples:
+      - "How many patients were admitted last month?"
+      - "Average length of stay by unit this quarter"
+      - "Show revenue by payer for the last 6 months"
+      - "What is the current bed occupancy trend?"
+
+prompts:
+  system:
+    version: "1.0.0"
+    content: |
+      You are {display_name}. You answer data questions using live Databricks
+      Genie results only — never invent numbers. Present the answer first,
+      then the SQL and table when available.
+  fallback:
+    version: "1.0.0"
+    content: |
+      [{display_name}] I answer data questions live from Databricks.
+      You asked: {question}.
+
+delegations: {}

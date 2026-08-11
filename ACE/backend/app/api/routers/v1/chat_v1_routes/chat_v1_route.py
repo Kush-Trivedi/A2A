@@ -56,6 +56,7 @@ def _to_turn_response(result: ChatTurnResult) -> ChatTurnResponse:
             for s in result.sources
         ],
         refusal=result.refusal,
+        disambiguation=result.disambiguation,
     )
 
 

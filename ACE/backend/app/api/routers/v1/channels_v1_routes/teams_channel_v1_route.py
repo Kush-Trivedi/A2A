@@ -46,12 +46,6 @@ async def _handle(request: Request, agent_key: str | None) -> JSONResponse:
     return JSONResponse({"type": "message", "text": text})
 
 
-@teams_channel_v1_router.post("/messages", include_in_schema=False)
-async def teams_messages(request: Request) -> JSONResponse:
-    """Default webhook — routes to the platform default agent."""
-    return await _handle(request, None)
-
-
 @teams_channel_v1_router.post("/{agent_key}/messages", include_in_schema=False)
 async def teams_agent_messages(agent_key: str, request: Request) -> JSONResponse:
     """Per-agent webhook — only for agents whose team opted in via

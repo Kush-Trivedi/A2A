@@ -45,11 +45,11 @@ One terminal per block, in order.
 $env:ACE_DB_POSTGRES_USER="postgres"; $env:ACE_DB_POSTGRES_PASSWORD="12345678"; $env:ACE_DB_POSTGRES_DBNAME="postgres"
 uv run python -m backend.app.app             # :3000 — Swagger at /docs
 
-# 2) Agents — same command in each agent folder   (A2A\Agents\<agent>)
+# 2) Agents — same command in each agent folder; each SELF-REGISTERS on boot
 uv run python -m app.main
-#   scheduling_agent :3100   insurance_agent :3200   general_agent    :3300
-#   file_upload_agent:3400   sharepoint_agent:3500   blob_agent       :3600
-#   sms_outreach_agent:3700  benefits_agent  :3800
+#   general_agent :3300          file_upload_agent :3400
+#   policy_procedure_agent :3500 sms_agent :3700
+#   benefits_agent :3800         econsult_agent :3900   gda_agent :4000
 
 # 3) Chat + canvas UI                         (A2A\ACE\frontend)
 npm run dev                                  # :5173 → browser → Entra login
@@ -108,42 +108,37 @@ images, namespaces per team — migration = updating card_urls in the registry.
 
 ## 4. How a TEAM ships a new agent (the onboarding path)
 
-1. **Copy the scaffold** — duplicate any agent folder (e.g. `scheduling_agent`)
-   under `Agents/<your_agent>`. Everything is yours: logic, config, prompts.
-2. **Edit `agent.yaml`** (the only contract with ACE):
-   - `agent:` team_key, agent_key, display_name, **version**
-   - `skills:` what you can do (id/name/description/tags)
-   - `prompts:` your versioned prompts (name → version + content)
-   - `llm:` your Foundry **deployment names** (base URL + key stay in ACE)
-   - `data:` your Databricks/SharePoint/Blob resources (warehouse, catalog,
-     genie space, site, container...)
-   - `data.channels:` OPTIONAL channel opt-ins — e.g. `teams: {enabled: true,
-     webhook_secret: ...}` if you want your agent in Microsoft Teams (§4b);
-     omit for chat-UI only
-   - `ace:` permission + **allowed_roles** (who may use your agent) +
-     knowledge_sources (which `sharepoint:*`/`blob:*` sources you answer from)
-   - `auth:` enabled + your Entra app audience (when going live)
-3. **Write your logic** in `app/agent_executor.py` — retrieval via
-   `AceCapabilityClient.retrieve`, LLM via `.llm_chat(deployment=...)`,
-   cross-team calls via `AgentDelegator` (always forward the envelope).
-4. **Test locally** — `uv sync && uv run python -m app.main`, then card check:
-   `GET http://localhost:<port>/.well-known/agent-card.json`.
-5. **Register with ACE** (running agent required — ACE validates the card):
-   ```powershell
-   uv run python -m app.register --cookie "<ace_session>" --csrf "<csrf>"
-   # then activate (admin):
-   # PATCH /api/v1/admin/agents/<agent_key>/status   {"status":"active"}
-   ```
-   Registration auto-seeds Casbin policies from `allowed_roles`, snapshots the
-   version (prompts included), and the agent appears ONLY for permitted roles.
-6. **Load your knowledge (if any)** — `POST /api/v1/knowledge/ingest/sharepoint`
-   or `/ingest/blob` with your source_name + location → returns a job_id;
-   poll `GET /api/v1/knowledge/ingest/jobs/{job_id}`.
-7. **Ship to cloud** — add one line to the `agents` array in `infra/main.bicep`
-   (name/team/port), `az acr build` with your AGENT arg, redeploy, then
-   re-register with the internal FQDN as card_url.
-8. **Iterate** — bump `version` in agent.yaml, re-register (new snapshot),
-   roll back anytime: `POST /api/v1/admin/agents/<key>/versions/<v>/activate`.
+Prerequisite (once per team, by an ACE admin): register the team and issue
+its **registration token** (`POST /api/v1/admin/agents/teams` then
+`POST /api/v1/admin/agents/teams/<key>/tokens` — shown once; store it in
+the team's Key Vault).
+
+1. **Copy the scaffold** — `Agents/_template/` (in the monorepo now; your own
+   Azure DevOps repo later — swap the kit path dep for the Artifacts feed).
+2. **Register your connections** (once): `POST /api/v1/connections` with your
+   SharePoint site / storage account / Databricks workspace / Twilio number —
+   secrets encrypted at rest, referenced by NAME from then on.
+3. **Ingest your data** (if you answer from documents): Data Onboarding UI,
+   `POST /api/v1/knowledge/ingest/source`, or the kit CLI
+   (`python -m ace_agent_kit.ingest --config ingest.yaml`) — you choose
+   connection, location, chunking, embedding, and `access.{agents, roles}`
+   (which agents may read the source, which user roles may see results).
+4. **Edit `agent.yaml`** (env-invariant manifest): identity + version,
+   `skills` with realistic **examples** (they ARE your routing — ACE warns at
+   registration if they overlap another agent), versioned `prompts`.
+5. **Edit `config/env/*.yaml`** (same keys all four): ports/URLs, your
+   registration token (`lookup:` in cloud), LLM **deployment names**,
+   `retrieval.knowledge_sources`, `connections.*` refs, `channels.*` opt-ins
+   (ui/teams/sms — unused stay `enabled: false`).
+6. **Run it** — `uv sync && uv run python -m app.main`. The agent
+   SELF-REGISTERS with ACE on startup (idempotent, retries until ACE is up —
+   same flow local and cloud). Then an admin activates:
+   `PATCH /api/v1/admin/agents/<key>/status {"status":"active"}`.
+7. **Ship to cloud** — build the shared agent image with your AGENT arg,
+   deploy to your Container App; only `config/env/<ENV>.yaml` values differ.
+8. **Iterate** — bump `version`, redeploy (startup re-registers → new
+   snapshot); roll back anytime:
+   `POST /api/v1/admin/agents/<key>/versions/<v>/activate`.
 
 ## 4b. Channels (SMS + Teams webhooks)
 
@@ -152,25 +147,24 @@ route inbound messages through the same agents (channel roles `sms_patient` /
 `teams_user`; bodies and numbers/ids AES-GCM encrypted at rest).
 
 ```text
-Twilio SMS  : point the Twilio number's webhook at
+Twilio SMS  : point the platform number's webhook at
               https://<ace>/api/v1/channels/sms/inbound   (X-Twilio-Signature)
               delivery callbacks -> /api/v1/channels/sms/status
-              config: twilio.* incl. messaging.default_agent, opt keywords
-Teams       : OPT-IN PER AGENT — a team that wants their agent in Microsoft
-              Teams declares it in their agent.yaml:
-                data:
-                  channels:
-                    teams:
-                      enabled: true
-                      webhook_secret: "<token Teams generated>"
+              inbound texts are answered by the channel-only SMS agent
+              (twilio.messaging.default_agent: sms). twilio.* stays in ACE
+              yaml DELIBERATELY: the inbound number is platform channel
+              infra, like Entra — per-team numbers become connections later.
+Teams       : PER-AGENT ONLY (no platform-wide route). The team sets in
+              config/env/<ENV>.yaml:
+                channels:
+                  teams:
+                    enabled: true
+                    webhook_secret: "<token Teams generated>"   # lookup: in cloud
               then creates an Outgoing Webhook in Teams with callback
               https://<ace>/api/v1/channels/teams/<agent_key>/messages
-              (HMAC over raw body with THEIR secret). Agents without the
-              block are NOT reachable over Teams (404). Signed-in Teams
-              users' aadObjectId drives RBAC via user_role_assignments.
-              Platform default route /channels/teams/messages uses yaml
-              microsoft.microsoft_teams.outgoing_webhook_secret.
-              app manifest template: teams-app-manifest.json
+              (HMAC over raw body with THEIR secret; non-opted-in agents
+              404). Signed-in Teams users' aadObjectId drives RBAC via
+              user_role_assignments. Manifest template: teams-app-manifest.json
 Outreach    : scheduled/one-way sends (Service Bus trigger later) call
               POST /api/v1/capability/sms/send (envelope + agent_key)
 ```
@@ -195,13 +189,15 @@ restrictions (Twilio/Microsoft ranges) + rate policies.
 
 ## 6. Credential swap (before first real login)
 
-Fill in `ACE/backend/app/config/env/<ENV>.yaml` (or Key Vault `lookup:` refs):
-`microsoft.entra.*` (+ redirect URI in the app registration),
-`database.postgres.*`, `microsoft.azure.azure_foundry.*` (then flip agents'
-`retrieval_mode` to `hybrid`), `databricks.host/token` (PAT),
-`microsoft.sharepoint.*`, `microsoft.azure.storage_account.*`,
-`twilio.*` (+ webhook_base_url), `microsoft.microsoft_teams.
-outgoing_webhook_secret`, `security.field_encryption_key` +
-`security.identity_hash_pepper` (PHI at-rest encryption / phone hashing),
-and each agent's `auth:` section. Zero code changes — run the checklist in
-`STATE.md`.
+ACE yaml is INFRA-ONLY now. Fill in `ACE/backend/app/config/env/<ENV>.yaml`
+(or Key Vault `lookup:` refs): `microsoft.entra.*` (+ redirect URI),
+`database.postgres.*`, `microsoft.azure.azure_foundry.*` (base + key — then
+flip agents' `retrieval.mode` to `hybrid`), `twilio.*` (platform inbound
+number), `security.field_encryption_key` + `security.identity_hash_pepper`.
+
+Everything team-owned moved OUT of ACE yaml: SharePoint / storage / Databricks
+workspaces are **connections** (`POST /api/v1/connections`, secrets encrypted
+at rest), Teams webhook secrets and LLM deployment names live in each agent's
+`config/env/<ENV>.yaml` (`lookup:` against the TEAM's Key Vault), and
+registration tokens are issued per team. Zero code changes anywhere — run
+`TESTING.md` end to end after the swap.

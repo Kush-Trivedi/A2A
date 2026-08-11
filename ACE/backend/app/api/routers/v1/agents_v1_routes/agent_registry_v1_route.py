@@ -7,15 +7,22 @@ from .....dto.agents import (
     RegisteredAgentModel,
     RegisterTeamRequest,
     TeamResponse,
+    TeamTokenResponse,
     UpdateAgentStatusRequest,
 )
+from .....services.agents.route_index_service import RouteIndexService
+from .....services.agents.team_token_service import TeamTokenService
 from .....dto.common import ApiEnvelope
 from .....entity.agents import OdtTeamEntity, RegisteredAgentEntity
 from .....security.authorization import require_permission
 from .....security.dependencies import get_current_context, require_csrf
 from .....security.session import SessionContext
 from .....services.agents.registry_service import AgentRegistryService
-from ....dependencies import provide_agent_registry_service
+from ....dependencies import (
+    provide_agent_registry_service,
+    provide_route_index_service,
+    provide_team_token_service,
+)
 
 agent_registry_v1_router = APIRouter(prefix="/admin/agents", tags=["Admin / Agent Registry"])
 
@@ -105,6 +112,7 @@ async def register_agent(
     body: RegisterAgentRequest,
     context: SessionContext = Depends(get_current_context),
     service: AgentRegistryService = Depends(provide_agent_registry_service),
+    route_index: RouteIndexService = Depends(provide_route_index_service),
 ) -> ApiEnvelope[AgentRegistrationResponse]:
     agent, team_key, policies_seeded = await service.register_agent(
         context=context,
@@ -122,12 +130,48 @@ async def register_agent(
         team_config=body.team_config,
         prompts=body.prompts,
     )
+    overlaps = await route_index.rebuild_for_agent(
+        tenant_id=context.tenant_id,
+        agent_key=agent.agent_key,
+        display_name=agent.display_name,
+        description=agent.description,
+        skills=[dict(s) for s in (agent.skills or [])],
+    )
+    message = "Agent registered."
+    if overlaps:
+        message = (
+            "Agent registered with ROUTE OVERLAP warnings: "
+            + "; ".join(f"{o['agent_key']} ({o['score']})" for o in overlaps)
+        )
     return ApiEnvelope(
         data=AgentRegistrationResponse(
             agent=_to_agent(agent, team_key),
             policies_seeded=policies_seeded,
         ),
-        message="Agent registered.",
+        message=message,
+    )
+
+
+@agent_registry_v1_router.post(
+    "/teams/{team_key}/tokens",
+    response_model=ApiEnvelope[TeamTokenResponse],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[
+        Depends(require_csrf),
+        Depends(require_permission(_REGISTRY_OBJ, "POST")),
+    ],
+)
+async def issue_team_token(
+    team_key: str,
+    context: SessionContext = Depends(get_current_context),
+    tokens: TeamTokenService = Depends(provide_team_token_service),
+) -> ApiEnvelope[TeamTokenResponse]:
+    """Issue a registration token for a team. Shown ONCE — store it in the
+    team's Key Vault (`ace.registration_token` lookup in their env yaml)."""
+    token = await tokens.issue(context=context, team_key=team_key)
+    return ApiEnvelope(
+        data=TeamTokenResponse(team_key=team_key.strip().lower(), token=token),
+        message="Token issued. It is shown exactly once — store it securely.",
     )
 
 

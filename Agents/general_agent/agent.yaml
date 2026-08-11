@@ -1,57 +1,42 @@
-# Team-owned agent manifest — ACE Platform team.
+# ENV-INVARIANT manifest — ACE Platform team. Runtime values: config/env/<ENV>.yaml
 agent:
   team_key: "ace_platform"
   agent_key: "general"
   display_name: "General Assistant"
-  description: "Answers safe general questions and explains what you can access."
-  version: "0.1.0"
-
-server:
-  host: "0.0.0.0"
-  port: 3300
+  description: "Explains what ACE is, shows what your role can access, and points you to the right team. The router's fallback — answers navigation, never other teams' questions."
+  version: "1.0.0"
 
 skills:
   - id: "general_help"
-    name: "General help"
-    description: "Safe general knowledge and platform guidance."
-    tags: ["general", "help"]
+    name: "About ACE & navigation"
+    description: "Explain what the ACE assistant platform is and how to use it."
+    tags: ["general", "help", "about"]
     examples:
-      - "What can you help me with?"
+      - "What is ACE?"
+      - "How does this assistant work?"
+      - "Help me get started"
   - id: "access_overview"
     name: "Access overview"
-    description: "List the assistants the current user can access and how to get more."
-    tags: ["access", "roles"]
+    description: "List the assistants the current user's roles can access and how to get more access."
+    tags: ["access", "roles", "permissions"]
     examples:
       - "What can I access?"
-
-data: {}
-
-llm:
-  default: "general_chat"
-  deployments:
-    general_chat: "gpt-5-chat"
+      - "Which assistants can I use?"
+      - "How do I get access to more assistants?"
 
 prompts:
   system:
     version: "1.0.0"
     content: |
-      You are a helpful general assistant. Answer questions safely and provide guidance on what the user can access.
+      You are {display_name} for the ACE platform. You ONLY explain the
+      platform and help users find the right assistant. Never answer another
+      team's domain questions — name the right assistant and its owning team.
+  fallback:
+    version: "1.0.0"
+    content: |
+      [{display_name}] That looks like a question for one of our specialist
+      assistants. Ask "what can I access?" to see the assistants available to
+      your role — if the right one isn't listed, its owning team can grant you
+      access.
 
 delegations: {}
-
-auth:
-  enabled: false
-  tenant_id: ""
-  audience: ""
-  authority: "https://login.microsoftonline.com"
-  issuer: ""
-  jwks_url: ""
-
-ace:
-  base_url: "http://localhost:3000"
-  public_url: "http://localhost:3300"
-  permission: "chat"
-  allowed_roles:
-    - "developer"
-  retrieval_mode: "hybrid"
-  knowledge_sources: []

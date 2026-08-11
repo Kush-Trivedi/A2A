@@ -34,15 +34,21 @@ class BlobIngestionService:
     def __init__(self, ingestion: IngestionService | None = None) -> None:
         self._ingestion = ingestion or get_ingestion_service()
 
-    def _client(self) -> AzureStorageBlobClient:
+    def _client(self, connection_config: dict | None = None) -> AzureStorageBlobClient:
         context = get_application_context()
-        storage = context.microsoft.get("azure", {}).get("storage_account", {}) or {}
-        account_url = storage.get("storage_account_url")
+        if connection_config:
+            storage = dict(connection_config)
+        else:
+            storage = context.microsoft.get("azure", {}).get("storage_account", {}) or {}
+        account_url = storage.get("account_url") or storage.get("storage_account_url")
         if not PlaceholderPolicy.is_configured(account_url):
-            raise ValidationError(
-                "Blob storage is not configured. Set "
-                "microsoft.azure.storage_account.storage_account_url in the env yaml."
+            hint = (
+                "connection config key 'account_url'"
+                if connection_config
+                else "microsoft.azure.storage_account.storage_account_url in the env yaml "
+                "(or register a storage_blob connection)"
             )
+            raise ValidationError(f"Blob storage is not configured. Set {hint}.")
         return AzureStorageBlobClient(
             account_url=str(account_url),
             managed_identity_client_id=context.managed_identity_client_id or None,
@@ -56,6 +62,7 @@ class BlobIngestionService:
         container: str,
         prefix: str = "",
         chunking_strategy: str | None = None,
+        connection_config: dict | None = None,
     ) -> BlobIngestionResult:
         normalized = (source_name or "").strip().lower()
         if not normalized:
@@ -64,7 +71,7 @@ class BlobIngestionService:
             raise ValidationError("container is required.")
         knowledge_source = f"{_SOURCE_PREFIX}{normalized}"
 
-        files = await asyncio.to_thread(self._list_files, container, prefix)
+        files = await asyncio.to_thread(self._list_files, container, prefix, connection_config)
         ingested = skipped = chunks = 0
         for filename, raw_bytes in files:
             try:
@@ -104,8 +111,10 @@ class BlobIngestionService:
             chunk_count=chunks,
         )
 
-    def _list_files(self, container: str, prefix: str) -> list[tuple[str, bytes]]:
-        client = self._client()
+    def _list_files(
+        self, container: str, prefix: str, connection_config: dict | None = None
+    ) -> list[tuple[str, bytes]]:
+        client = self._client(connection_config)
         try:
             blobs = client.list_blobs(container, folder_prefix=prefix or None)
             return [
