@@ -98,12 +98,14 @@ class AgentRegistryService:
         version: str = "0.1.0",
         permission: str = "chat",
         allowed_roles: list[str] | None = None,
-    ) -> tuple[RegisteredAgentEntity, int]:
+        skills: list[dict] | None = None,
+    ) -> tuple[RegisteredAgentEntity, int, int, list[dict]]:
         normalized_team = team_key.strip().lower()
         normalized_agent = agent_key.strip().lower()
         if not normalized_agent:
             raise ValidationError("Agent key must not be empty.")
         roles = list(dict.fromkeys(r.strip() for r in (allowed_roles or []) if r.strip()))
+        declared_skills = [dict(s) for s in (skills or [])]
 
         try:
             async with self._connector.session() as session:
@@ -149,6 +151,7 @@ class AgentRegistryService:
                     agent.version = version
                     agent.permission = permission
                     agent.allowed_roles = roles
+                    agent.skills = declared_skills
                     agent.updated_at = _now()
                     session.add(agent)
                 else:
@@ -164,6 +167,7 @@ class AgentRegistryService:
                         status=AgentStatus.REGISTERED,
                         permission=permission,
                         allowed_roles=roles,
+                        skills=declared_skills,
                     )
                     session.add(agent)
         except (NotFoundError, ValidationError):
@@ -177,11 +181,18 @@ class AgentRegistryService:
             permission=permission,
             roles=roles,
         )
+        # The declared description/skills ARE the routing surface — rebuild
+        # this agent's utterance index on every (re-)registration.
+        from .route_index_service import get_route_index_service
+
+        route_utterances, route_overlaps = await get_route_index_service().rebuild_for_agent(
+            tenant_id=context.tenant_id, agent=agent
+        )
         logger.info(
             "Agent registered",
             extra={"agent_key": normalized_agent, "team_key": normalized_team},
         )
-        return agent, policies_seeded
+        return agent, policies_seeded, route_utterances, route_overlaps
 
     async def _seed_policies(
         self, *, tenant_id: str, agent_key: str, permission: str, roles: list[str]

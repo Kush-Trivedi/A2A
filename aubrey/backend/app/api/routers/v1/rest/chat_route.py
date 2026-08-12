@@ -1,21 +1,34 @@
-"""Chat sessions — the user-plane conversation surface. The streaming turn
-endpoint (POST /chat/stream) joins this router at M3; sessions and their
-history are the durable substrate it writes to."""
+"""The user-plane conversation surface: sessions, history, and the
+streaming turn — SSE over POST, token-by-token from the routed agent."""
+
+import json
 
 from fastapi import APIRouter, Depends, status
+from fastapi.responses import StreamingResponse
 
 from .....dto.base import ApiEnvelope, MessageResponse
-from .....dto.chat import ChatMessageModel, ChatSessionModel, CreateSessionRequest
+from .....dto.chat import (
+    ChatMessageModel,
+    ChatSessionModel,
+    ChatTurnRequest,
+    CreateSessionRequest,
+)
 from .....entity.chat import ChatMessageEntity, ChatSessionEntity
 from .....security.authorization import require_permission
 from .....security.dependencies import get_current_context, require_csrf
 from .....security.session import SessionContext
-from .....services.chat import ChatSessionService
-from ....dependencies import provide_chat_session_service
+from .....services.chat import ChatSessionService, ConversationService
+from .....utils.errors import AppError
+from ....dependencies import provide_chat_session_service, provide_conversation_service
 
 chat_router = APIRouter(prefix="/chat", tags=["Chat"])
 
 _CHAT_OBJ = "/api/v1/chat"
+_SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+
+
+def _sse(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
 
 def _to_session(entity: ChatSessionEntity) -> ChatSessionModel:
@@ -36,6 +49,35 @@ def _to_message(entity: ChatMessageEntity) -> ChatMessageModel:
         content=entity.content,
         metadata=dict(entity.message_metadata or {}),
         created_at=entity.created_at,
+    )
+
+
+@chat_router.post(
+    "/stream",
+    dependencies=[Depends(require_csrf), Depends(require_permission(_CHAT_OBJ, "POST"))],
+)
+async def chat_stream(
+    body: ChatTurnRequest,
+    context: SessionContext = Depends(get_current_context),
+    conversation: ConversationService = Depends(provide_conversation_service),
+) -> StreamingResponse:
+    """One streamed chat turn. SSE events: meta, token, artifact, state,
+    disambiguation, refusal, error, done."""
+
+    async def event_stream():
+        try:
+            async for event, payload in conversation.stream(
+                context=context,
+                question=body.question,
+                session_id=body.session_id,
+                agent_key=body.agent_key,
+            ):
+                yield _sse(event, payload)
+        except AppError as exc:  # stream already started — surface, never mask
+            yield _sse("error", {"code": exc.code, "message": exc.client_message()})
+
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS
     )
 
 

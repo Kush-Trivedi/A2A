@@ -126,7 +126,7 @@ async def register_agent(
     context: SessionContext = Depends(get_current_context),
     service: AgentRegistryService = Depends(provide_agent_registry_service),
 ) -> ApiEnvelope[AgentRegistrationResponse]:
-    agent, policies_seeded = await service.register_agent(
+    agent, policies_seeded, utterances, overlaps = await service.register_agent(
         context=context,
         team_key=body.team_key,
         agent_key=body.agent_key,
@@ -136,9 +136,15 @@ async def register_agent(
         version=body.version,
         permission=body.permission,
         allowed_roles=body.allowed_roles,
+        skills=[s.model_dump() for s in body.skills],
     )
     return ApiEnvelope(
-        data=AgentRegistrationResponse(agent=_to_agent(agent), policies_seeded=policies_seeded),
+        data=AgentRegistrationResponse(
+            agent=_to_agent(agent),
+            policies_seeded=policies_seeded,
+            route_utterances=utterances,
+            route_overlaps=overlaps,
+        ),
         message="Agent registered.",
     )
 
@@ -226,7 +232,7 @@ async def self_register(
             "Registration token belongs to a different team.",
             details={"token_team": token.team_key, "requested_team": body.team_key},
         )
-    agent, policies_seeded = await service.register_agent(
+    agent, policies_seeded, utterances, overlaps = await service.register_agent(
         context=_service_context(token),
         team_key=body.team_key,
         agent_key=body.agent_key,
@@ -236,8 +242,14 @@ async def self_register(
         version=body.version,
         permission=body.permission,
         allowed_roles=body.allowed_roles,
+        skills=[s.model_dump() for s in body.skills],
     )
     return ApiEnvelope(
-        data=AgentRegistrationResponse(agent=_to_agent(agent), policies_seeded=policies_seeded),
+        data=AgentRegistrationResponse(
+            agent=_to_agent(agent),
+            policies_seeded=policies_seeded,
+            route_utterances=utterances,
+            route_overlaps=overlaps,
+        ),
         message="Agent registered.",
     )

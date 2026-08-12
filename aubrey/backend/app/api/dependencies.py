@@ -22,7 +22,12 @@ from ..services.documents import (
     get_file_upload_service,
     get_sharepoint_source_service,
 )
-from ..services.chat import ChatSessionService, get_chat_session_service
+from ..services.chat import (
+    ChatSessionService,
+    ConversationService,
+    get_chat_session_service,
+    get_conversation_service,
+)
 from ..services.knowledge import KnowledgeSinkFactory, get_knowledge_sink_factory
 
 
@@ -66,6 +71,9 @@ class ServiceContainer:
     def chat_session_service(self) -> ChatSessionService:
         return get_chat_session_service()
 
+    def conversation_service(self) -> ConversationService:
+        return get_conversation_service()
+
 
 container = ServiceContainer()
 
@@ -82,3 +90,4 @@ provide_sharepoint_source_service = container.sharepoint_source_service
 provide_file_upload_service = container.file_upload_service
 provide_knowledge_sink_factory = container.knowledge_sink_factory
 provide_chat_session_service = container.chat_session_service
+provide_conversation_service = container.conversation_service

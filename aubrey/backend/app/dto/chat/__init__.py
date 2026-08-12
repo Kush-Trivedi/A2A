@@ -1,3 +1,13 @@
-from .models import ChatMessageModel, ChatSessionModel, CreateSessionRequest
+from .models import (
+    ChatMessageModel,
+    ChatSessionModel,
+    ChatTurnRequest,
+    CreateSessionRequest,
+)
 
-__all__ = ["ChatMessageModel", "ChatSessionModel", "CreateSessionRequest"]
+__all__ = [
+    "ChatMessageModel",
+    "ChatSessionModel",
+    "ChatTurnRequest",
+    "CreateSessionRequest",
+]

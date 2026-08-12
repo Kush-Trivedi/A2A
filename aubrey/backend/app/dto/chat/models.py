@@ -8,6 +8,12 @@ class CreateSessionRequest(StrictBaseModel):
     title: str = ""
 
 
+class ChatTurnRequest(StrictBaseModel):
+    question: str
+    session_id: str | None = None  # omit to start a new conversation
+    agent_key: str | None = None   # pin a specific agent; else the router decides
+
+
 class ChatSessionModel(StrictBaseModel):
     id: str
     title: str

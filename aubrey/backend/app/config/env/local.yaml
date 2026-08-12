@@ -104,3 +104,17 @@ agents:
     # conversation window (tokens) sent to agents each turn; a team manifest
     # can lower it per agent later
     window_tokens: 2000
+  a2a:
+    request_timeout_seconds: 120
+    streaming_enabled: true
+    card_cache_ttl_seconds: 300
+  router:
+    mode: "sparse"        # full-text only - no model credentials needed locally
+    threshold: 0.42       # dense dispatch floor (cosine)
+    sparse_threshold: 0.03
+    margin: 0.06
+    sparse_ambiguity_ratio: 0.8
+    switch_margin: 0.12
+    overlap_threshold: 0.86
+    fallback_agent: "general"
+    utterance_cap: 32

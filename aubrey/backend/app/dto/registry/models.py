@@ -20,6 +20,16 @@ class TeamModel(StrictBaseModel):
     updated_at: datetime
 
 
+class AgentSkillModel(StrictBaseModel):
+    """A routable capability — its description and examples BECOME the
+    router's utterance index for this agent."""
+
+    id: str = ""
+    name: str = ""
+    description: str = ""
+    examples: list[str] = []
+
+
 class RegisterAgentRequest(StrictBaseModel):
     team_key: str
     agent_key: str
@@ -29,6 +39,7 @@ class RegisterAgentRequest(StrictBaseModel):
     version: str = "0.1.0"
     permission: str = "chat"
     allowed_roles: list[str] = []
+    skills: list[AgentSkillModel] = []
 
 
 class AgentModel(StrictBaseModel):
@@ -48,6 +59,9 @@ class AgentModel(StrictBaseModel):
 class AgentRegistrationResponse(StrictBaseModel):
     agent: AgentModel
     policies_seeded: int
+    route_utterances: int = 0
+    # non-blocking warnings: this agent's utterances sit close to another's
+    route_overlaps: list[dict] = []
 
 
 class UpdateAgentStatusRequest(StrictBaseModel):
