@@ -1,13 +1,16 @@
 import threading
 import time
 from typing import Optional
+from urllib.parse import unquote, urlparse
 
 from azure.core.exceptions import AzureError, ResourceNotFoundError
 from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
+from azure.storage.blob import BlobServiceClient
 from openai import AsyncAzureOpenAI, AzureOpenAI
 
 from ..common.logger import Logger
+from ..errors import ValidationError
 
 logger = Logger(__name__).get_logger()
 
@@ -106,6 +109,56 @@ class AzureOpenAIClient:
                 timeout=self.timeout_seconds,
             )
         return self._async_clients[cache_key]
+
+
+class AzureStorageBlobClient:
+    """Blob access for ingestion: recursive listing (a prefix walks folders
+    inside folders) and per-blob download — by (container, name) or by the
+    blob's full URL (the Event Grid case: a URL arrives, we fetch one file)."""
+
+    def __init__(self, account_url: str, managed_identity_client_id: Optional[str] = None):
+        if not account_url:
+            raise ValidationError("Azure Storage account_url is required.")
+        self.account_url = account_url.rstrip("/")
+        self._client = BlobServiceClient(
+            account_url=self.account_url,
+            credential=DefaultAzureCredential(
+                managed_identity_client_id=managed_identity_client_id
+            ),
+        )
+
+    def list_blobs(self, container: str, prefix: str | None = None) -> list[str]:
+        """All blob names under the prefix — Azure listing is inherently
+        recursive, so nested 'folders' are included."""
+        container_client = self._client.get_container_client(container)
+        return [blob.name for blob in container_client.list_blobs(name_starts_with=prefix)]
+
+    def read_blob_bytes(self, container: str, blob_name: str) -> bytes:
+        blob_client = self._client.get_blob_client(container=container, blob=blob_name)
+        return blob_client.download_blob().readall()
+
+    def parse_blob_url(self, url: str) -> tuple[str, str]:
+        """(container, blob_name) from a full blob URL on THIS account."""
+        parsed = urlparse(url)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        if origin.rstrip("/") != self.account_url:
+            raise ValidationError(
+                "The blob URL does not belong to the configured storage account.",
+                details={"url_account": origin, "configured": self.account_url},
+            )
+        path = unquote(parsed.path).lstrip("/")
+        container, _, blob_name = path.partition("/")
+        if not container or not blob_name:
+            raise ValidationError(
+                "The blob URL must be https://<account>/<container>/<blob-path>.",
+                details={"url": url},
+            )
+        return container, blob_name
+
+    def read_blob_url(self, url: str) -> tuple[str, bytes]:
+        """(blob_name, content) for a full blob URL."""
+        container, blob_name = self.parse_blob_url(url)
+        return blob_name, self.read_blob_bytes(container, blob_name)
 
 
 class AzurePostgresToken:
