@@ -218,12 +218,16 @@ oauth_compact_router.add_api_route(
 
 @auth_router.get("/me", name="auth_me", response_model=ApiEnvelope[MeResponse])
 async def me(
+    request: Request,
     context: SessionContext = Depends(get_current_context),
+    settings: AuthSettings = Depends(provide_auth_settings),
 ) -> ApiEnvelope[MeResponse]:
-    # csrf_token is returned so Swagger users can paste it into Authorize —
-    # log in via the browser, call /me here, copy the token, done.
+    # The store keeps only a HASH of the CSRF token; the raw value lives in
+    # the (deliberately readable) csrf cookie set at login. Returning it here
+    # lets Swagger users paste it into Authorize without touching dev tools.
+    csrf_cookie = request.cookies.get(SessionCookieManager(settings).csrf_cookie_name)
     return ApiEnvelope(
-        data=MeResponse(user=_to_profile(context), csrf_token=context.csrf_token)
+        data=MeResponse(user=_to_profile(context), csrf_token=csrf_cookie)
     )
 
 
