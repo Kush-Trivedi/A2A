@@ -17,14 +17,15 @@ class ZipExtractor:
     expanded up to `max_depth` levels; each inner file becomes its own
     document named `<zip>/<inner/path>`.
 
-    `max_total_bytes` caps the CUMULATIVE extracted size — a tiny zip can
-    expand into gigabytes (zip bomb), so extraction fails loud the moment
-    the budget is crossed instead of exhausting memory."""
+    `max_total_bytes` (optional) caps the CUMULATIVE extracted size — a tiny
+    zip can expand into gigabytes (zip bomb), so user uploads set a budget
+    and fail loud the moment it is crossed. Trusted sources (a team's own
+    storage account) leave it None: no limit."""
 
     _ZIP_MAGIC = b"PK\x03\x04"
 
     def __init__(
-        self, max_depth: int = 2, max_total_bytes: int = 512 * 1024 * 1024
+        self, max_depth: int = 2, max_total_bytes: int | None = None
     ) -> None:
         self._max_depth = max_depth
         self._max_total_bytes = max_total_bytes
@@ -58,7 +59,10 @@ class ZipExtractor:
             if name.startswith(_JUNK_PREFIXES) or name.rsplit("/", 1)[-1] in _JUNK_NAMES:
                 continue
             qualified = f"{source_name}/{name}"
-            if extracted["bytes"] + info.file_size > self._max_total_bytes:
+            if (
+                self._max_total_bytes is not None
+                and extracted["bytes"] + info.file_size > self._max_total_bytes
+            ):
                 raise DocumentProcessingError(
                     "The archive expands past the "
                     f"{self._max_total_bytes // (1024 * 1024)} MB extraction limit.",
