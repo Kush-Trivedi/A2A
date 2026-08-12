@@ -15,9 +15,11 @@ from ..services.authz import AuthzLoginService, get_authz_login_service
 from ..services.documents import (
     BlobSourceService,
     ConnectionService,
+    FileUploadService,
     SharePointSourceService,
     get_blob_source_service,
     get_connection_service,
+    get_file_upload_service,
     get_sharepoint_source_service,
 )
 
@@ -53,6 +55,9 @@ class ServiceContainer:
     def sharepoint_source_service(self) -> SharePointSourceService:
         return get_sharepoint_source_service()
 
+    def file_upload_service(self) -> FileUploadService:
+        return get_file_upload_service()
+
 
 container = ServiceContainer()
 
@@ -66,3 +71,4 @@ provide_team_token_service = container.team_token_service
 provide_connection_service = container.connection_service
 provide_blob_source_service = container.blob_source_service
 provide_sharepoint_source_service = container.sharepoint_source_service
+provide_file_upload_service = container.file_upload_service

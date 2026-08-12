@@ -15,12 +15,19 @@ class ZipExtractor:
     """Walks a zip archive (folders inside folders, zips inside zips) and
     yields every real file as (relative_name, bytes). Nested archives are
     expanded up to `max_depth` levels; each inner file becomes its own
-    document named `<zip>/<inner/path>`."""
+    document named `<zip>/<inner/path>`.
+
+    `max_total_bytes` caps the CUMULATIVE extracted size — a tiny zip can
+    expand into gigabytes (zip bomb), so extraction fails loud the moment
+    the budget is crossed instead of exhausting memory."""
 
     _ZIP_MAGIC = b"PK\x03\x04"
 
-    def __init__(self, max_depth: int = 2) -> None:
+    def __init__(
+        self, max_depth: int = 2, max_total_bytes: int = 512 * 1024 * 1024
+    ) -> None:
         self._max_depth = max_depth
+        self._max_total_bytes = max_total_bytes
 
     @classmethod
     def is_zip(cls, filename: str, raw_bytes: bytes) -> bool:
@@ -29,10 +36,10 @@ class ZipExtractor:
         return raw_bytes[:4] == cls._ZIP_MAGIC
 
     def extract(self, raw_bytes: bytes, source_name: str) -> list[tuple[str, bytes]]:
-        return self._extract(raw_bytes, source_name, depth=0)
+        return self._extract(raw_bytes, source_name, depth=0, extracted={"bytes": 0})
 
     def _extract(
-        self, raw_bytes: bytes, source_name: str, depth: int
+        self, raw_bytes: bytes, source_name: str, depth: int, extracted: dict[str, int]
     ) -> list[tuple[str, bytes]]:
         try:
             archive = zipfile.ZipFile(io.BytesIO(raw_bytes))
@@ -50,8 +57,18 @@ class ZipExtractor:
             name = info.filename
             if name.startswith(_JUNK_PREFIXES) or name.rsplit("/", 1)[-1] in _JUNK_NAMES:
                 continue
-            content = archive.read(info)
             qualified = f"{source_name}/{name}"
+            if extracted["bytes"] + info.file_size > self._max_total_bytes:
+                raise DocumentProcessingError(
+                    "The archive expands past the "
+                    f"{self._max_total_bytes // (1024 * 1024)} MB extraction limit.",
+                    details={
+                        "filename": qualified,
+                        "max_total_bytes": self._max_total_bytes,
+                    },
+                )
+            content = archive.read(info)
+            extracted["bytes"] += len(content)
             if self.is_zip(name, content):
                 if depth + 1 > self._max_depth:
                     logger.warning(
@@ -59,7 +76,7 @@ class ZipExtractor:
                         extra={"filename": qualified, "max_depth": self._max_depth},
                     )
                     continue
-                files.extend(self._extract(content, qualified, depth + 1))
+                files.extend(self._extract(content, qualified, depth + 1, extracted))
             else:
                 files.append((qualified, content))
         return files

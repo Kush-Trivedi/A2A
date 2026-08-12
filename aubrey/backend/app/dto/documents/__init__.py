@@ -1,7 +1,10 @@
 from .models import (
     BlobIngestRequest,
     ConnectionModel,
+    FailedFileModel,
+    FileUploadResponse,
     IngestResultModel,
+    PreparedFileModel,
     RegisterConnectionRequest,
     SharePointIngestRequest,
 )
@@ -9,7 +12,10 @@ from .models import (
 __all__ = [
     "BlobIngestRequest",
     "ConnectionModel",
+    "FailedFileModel",
+    "FileUploadResponse",
     "IngestResultModel",
+    "PreparedFileModel",
     "RegisterConnectionRequest",
     "SharePointIngestRequest",
 ]

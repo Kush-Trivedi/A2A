@@ -46,3 +46,22 @@ class IngestResultModel(StrictBaseModel):
     linked: int     # content existed: granted to this agent, no re-conversion
     skipped: int    # already granted to this agent
     failed: int
+
+
+class PreparedFileModel(StrictBaseModel):
+    file_name: str
+    sha256: str
+    characters: int
+    text: str  # LLM-ready markdown
+
+
+class FailedFileModel(StrictBaseModel):
+    file_name: str
+    reason: str
+
+
+class FileUploadResponse(StrictBaseModel):
+    upload_name: str
+    size_bytes: int
+    prepared: list[PreparedFileModel]
+    failed: list[FailedFileModel]

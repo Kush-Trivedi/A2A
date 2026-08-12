@@ -17,6 +17,7 @@ dependencies = [
     "openai>=2.53.0",
     "pyjwt[crypto]>=2.13.0",
     "python-json-logger>=4.1.0",
+    "python-multipart>=0.0.32",
     "pyyaml>=6.0.3",
     "requests>=2.34.2",
     "rich>=15.0.0",
