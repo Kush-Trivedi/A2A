@@ -36,6 +36,8 @@ class DocumentBatchEntity(TimestampModel, table=True):
     )
     document_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     processed_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    # content already existed — this run only granted it to the batch's agent
+    linked_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     skipped_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     failed_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
     properties: dict[str, Any] = Field(

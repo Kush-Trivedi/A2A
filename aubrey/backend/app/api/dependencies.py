@@ -12,6 +12,14 @@ from ..services.agents import (
     get_team_token_service,
 )
 from ..services.authz import AuthzLoginService, get_authz_login_service
+from ..services.documents import (
+    BlobSourceService,
+    ConnectionService,
+    SharePointSourceService,
+    get_blob_source_service,
+    get_connection_service,
+    get_sharepoint_source_service,
+)
 
 
 class ServiceContainer:
@@ -36,6 +44,15 @@ class ServiceContainer:
     def team_token_service(self) -> TeamTokenService:
         return get_team_token_service()
 
+    def connection_service(self) -> ConnectionService:
+        return get_connection_service()
+
+    def blob_source_service(self) -> BlobSourceService:
+        return get_blob_source_service()
+
+    def sharepoint_source_service(self) -> SharePointSourceService:
+        return get_sharepoint_source_service()
+
 
 container = ServiceContainer()
 
@@ -46,3 +63,6 @@ provide_oauth_client = container.oauth_client
 provide_login_service = container.login_service
 provide_agent_registry_service = container.agent_registry_service
 provide_team_token_service = container.team_token_service
+provide_connection_service = container.connection_service
+provide_blob_source_service = container.blob_source_service
+provide_sharepoint_source_service = container.sharepoint_source_service

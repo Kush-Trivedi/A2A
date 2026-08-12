@@ -1,17 +1,17 @@
-"""Blob storage source: a whole container/prefix (folders inside folders —
-listing is recursive), one named file, or one blob URL (the Event Grid
-case). Everything downloads per file and flows through the shared
-DocumentPipeline. The account is platform-held (microsoft.azure.
-storage_account in the env yaml)."""
+"""Blob storage source. WHERE to read comes from the team's registered
+connection (account_url + container); a whole prefix (folders inside folders
+— listing is recursive), one named file, or one blob URL (the Event Grid
+case). Access is the platform identity, granted RBAC on the team's account.
+Everything downloads per file and flows through the shared DocumentPipeline."""
 
 import asyncio
 
 from ...config.application_context import get_application_context
-from ...config.settings_validator import PlaceholderPolicy
 from ...security.session import SessionContext
 from ...utils.azure.azure_helpers import AzureStorageBlobClient
 from ...utils.common.logger import Logger
 from ...utils.errors import ExternalServiceError, ValidationError
+from .connection_service import ConnectionService, get_connection_service
 from .document_pipeline import (
     DocumentPipeline,
     DocumentSink,
@@ -24,20 +24,19 @@ logger = Logger(__name__).get_logger()
 
 
 class BlobSourceService:
-    def __init__(self, pipeline: DocumentPipeline | None = None) -> None:
+    def __init__(
+        self,
+        pipeline: DocumentPipeline | None = None,
+        connections: ConnectionService | None = None,
+    ) -> None:
         self._pipeline = pipeline or get_document_pipeline()
+        self._connections = connections or get_connection_service()
 
-    def _client(self) -> AzureStorageBlobClient:
+    @staticmethod
+    def _client(account_url: str) -> AzureStorageBlobClient:
         context = get_application_context()
-        storage = context.microsoft.get("azure", {}).get("storage_account", {}) or {}
-        account_url = storage.get("account_url")
-        if not PlaceholderPolicy.is_configured(account_url):
-            raise ValidationError(
-                "Blob storage is not configured. Set "
-                "microsoft.azure.storage_account.account_url in the env yaml."
-            )
         return AzureStorageBlobClient(
-            account_url=str(account_url),
+            account_url=account_url,
             managed_identity_client_id=context.managed_identity_client_id or None,
         )
 
@@ -47,24 +46,34 @@ class BlobSourceService:
         context: SessionContext,
         team_key: str,
         agent_key: str,
-        container: str = "",
+        connection_key: str,
         prefix: str = "",
         file_name: str | None = None,
         blob_url: str | None = None,
         sink: DocumentSink | None = None,
     ) -> PipelineResult:
-        client = self._client()
+        connection = await self._connections.get(
+            context=context, team_key=team_key, connection_key=connection_key
+        )
+        if connection.source_type != "blob":
+            raise ValidationError(
+                f"Connection '{connection.connection_key}' is "
+                f"'{connection.source_type}', not blob storage.",
+            )
+        client = self._client(connection.config["account_url"])
+        container = connection.config["container"]
 
         if blob_url and blob_url.strip():
-            resolved_container, blob_name = client.parse_blob_url(blob_url.strip())
-            files = [self._to_source_file(client, resolved_container, blob_name)]
-            container = resolved_container
+            # parse_blob_url refuses URLs from any other storage account.
+            url_container, blob_name = client.parse_blob_url(blob_url.strip())
+            if url_container != container:
+                raise ValidationError(
+                    "The blob URL points at a different container than the connection.",
+                    details={"url_container": url_container, "connection": container},
+                )
+            files = [self._to_source_file(client, container, blob_name)]
         else:
-            if not container.strip():
-                raise ValidationError("Provide either a container or a blob_url.")
-            files = await asyncio.to_thread(
-                self._list_files, client, container, prefix
-            )
+            files = await asyncio.to_thread(self._list_files, client, container, prefix)
             if file_name and file_name.strip():
                 wanted = file_name.strip().lower()
                 files = [
@@ -79,13 +88,14 @@ class BlobSourceService:
 
         return await self._pipeline.run(
             tenant_id=context.tenant_id,
-            team_key=team_key.strip().lower(),
+            team_key=connection.team_key,
             agent_key=agent_key.strip().lower(),
             source_type="blob",
-            batch_name=f"blob:{container}/{prefix or ''}".rstrip("/"),
+            batch_name=f"blob:{connection.connection_key}/{prefix or ''}".rstrip("/"),
             files=files,
             download=self._downloader(client),
             properties={
+                "connection_key": connection.connection_key,
                 "container": container,
                 "prefix": prefix,
                 "file_name": file_name or "",

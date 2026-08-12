@@ -49,20 +49,21 @@ class BatchTracker:
         return batch_id
 
     async def record_progress(
-        self, *, batch_id: str, processed: int, skipped: int, failed: int
+        self, *, batch_id: str, processed: int, linked: int, skipped: int, failed: int
     ) -> None:
-        await self._update(batch_id, processed, skipped, failed, status=None)
+        await self._update(batch_id, processed, linked, skipped, failed, status=None)
 
     async def complete(
-        self, *, batch_id: str, processed: int, skipped: int, failed: int
+        self, *, batch_id: str, processed: int, linked: int, skipped: int, failed: int
     ) -> None:
         status = BatchStatus.COMPLETED_WITH_ERRORS if failed else BatchStatus.COMPLETED
-        await self._update(batch_id, processed, skipped, failed, status=status)
+        await self._update(batch_id, processed, linked, skipped, failed, status=status)
 
     async def _update(
         self,
         batch_id: str,
         processed: int,
+        linked: int,
         skipped: int,
         failed: int,
         status: str | None,
@@ -77,6 +78,7 @@ class BatchTracker:
                     )
                 ).one()
                 batch.processed_count = processed
+                batch.linked_count = linked
                 batch.skipped_count = skipped
                 batch.failed_count = failed
                 if status is not None:

@@ -32,15 +32,14 @@ microsoft:
     api_audience: "your_api_audience"
     refresh_token_backend: "memory"
     refresh_token_ttl_seconds: 2592000
+  # Platform app registration only — WHERE data lives (sites, storage
+  # accounts, containers) is per-team, registered via /admin/connections.
   sharepoint:
     tenant_id: "your_sharepoint_tenant_id"
     client_id: "your_sharepoint_client_id"
     client_secret: "your_sharepoint_client_secret"
-    hostname: "your_org.sharepoint.com"
   azure:
     managed_identity_client_id: ""
-    storage_account:
-      account_url: "your_storage_account_url"
     azure_foundry:
       base_endpoint: "your_base_endpoint"
       api_key: "your_api_key"

@@ -155,11 +155,6 @@ class AzureStorageBlobClient:
             )
         return container, blob_name
 
-    def read_blob_url(self, url: str) -> tuple[str, bytes]:
-        """(blob_name, content) for a full blob URL."""
-        container, blob_name = self.parse_blob_url(url)
-        return blob_name, self.read_blob_bytes(container, blob_name)
-
 
 class AzurePostgresToken:
     """Entra access token for Postgres AAD auth (database.postgres.auth_mode
