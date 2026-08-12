@@ -135,3 +135,13 @@ class AceAzureFoundry:
             text = getattr(delta, "content", None)
             if text:
                 yield text
+
+
+_foundry: AceAzureFoundry | None = None
+
+
+def get_ace_azure_foundry() -> AceAzureFoundry:
+    global _foundry
+    if _foundry is None:
+        _foundry = AceAzureFoundry()
+    return _foundry

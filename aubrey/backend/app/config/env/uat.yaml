@@ -4,6 +4,7 @@ server:
   host: "0.0.0.0"
   port: 3000
   reload: false
+  workers: 2  # uvicorn processes; scale out replicas beyond this
 
 database:
   postgres:
@@ -80,3 +81,19 @@ authorization:
   policy_reload_seconds: 300
   full_access_roles:
     - "developer"
+
+# Retrieval numbers live here (env config), never as code constants.
+knowledge:
+  retrieval:
+    mode: "hybrid"              # dense | sparse | hybrid (RRF fusion)
+    top_k: 8
+    candidates: 32
+    min_similarity: 0.25
+    rrf_k: 60
+    neighbor_window: 1
+    neighbor_decay: 0.9
+    graph:                      # 1-hop GraphRAG expansion
+      enabled: true
+      entity_top_k: 5
+      entity_min_similarity: 0.45
+      hop_decay: 0.7

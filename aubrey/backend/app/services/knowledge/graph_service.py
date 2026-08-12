@@ -25,7 +25,7 @@ from ...entity.knowledge import (
     KnowledgeEdgeEntity,
     KnowledgeNodeEntity,
 )
-from ...llm.azure_foundry import AceAzureFoundry
+from ...llm.azure_foundry import AceAzureFoundry, get_ace_azure_foundry
 from ...utils.common.logger import Logger
 from .embedding_service import EmbeddingService, get_embedding_service
 
@@ -63,7 +63,7 @@ class GraphExtractionService:
         foundry: AceAzureFoundry | None = None,
         embeddings: EmbeddingService | None = None,
     ) -> None:
-        self._foundry = foundry or AceAzureFoundry()
+        self._foundry = foundry or get_ace_azure_foundry()
         self._embeddings = embeddings or get_embedding_service()
         self._db = get_postgres_connector()
 

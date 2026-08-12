@@ -76,9 +76,15 @@ if __name__ == "__main__":
     import uvicorn
 
     server = get_application_context().server
+    reload = bool(server.get("reload", False))
+    # Python scales with processes: yaml `workers` fans out uvicorn workers
+    # on one box; the API is stateless (all state in Postgres), so replicas
+    # behind a load balancer scale it horizontally beyond that.
+    workers = int(server["workers"])
     uvicorn.run(
         "backend.app.app:app",
         host=server["host"],
         port=server["port"],
-        reload=bool(server.get("reload", False)),
+        reload=reload,
+        workers=None if reload else workers,
     )

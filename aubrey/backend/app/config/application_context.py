@@ -43,6 +43,7 @@ class ApplicationContext:
         self.microsoft = content["microsoft"]
         self.security = content["security"]
         self.authorization = content["authorization"]
+        self.knowledge = content["knowledge"]
         logger.info("Configuration loaded for environment: %s", self.environment)
 
     def _value_with_overrides(
@@ -146,6 +147,14 @@ class ApplicationContext:
     @authorization.setter
     def authorization(self, variables: Dict[str, Any]) -> None:
         self._authorization = self._resolve_section("AUBREY_AUTHZ", variables)
+
+    @property
+    def knowledge(self) -> Dict[str, Any]:
+        return self._knowledge
+
+    @knowledge.setter
+    def knowledge(self, variables: Dict[str, Any]) -> None:
+        self._knowledge = self._resolve_section("AUBREY_KNOWLEDGE", variables)
 
 
 @lru_cache(maxsize=1)

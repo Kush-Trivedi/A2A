@@ -7,7 +7,7 @@ dense vectors. Configuration failures name the exact yaml keys."""
 from ...config.application_context import get_application_context
 from ...config.settings_validator import PlaceholderPolicy
 from ...entity.knowledge import DEFAULT_EMBEDDING_DIMENSIONS
-from ...llm.azure_foundry import AceAzureFoundry
+from ...llm.azure_foundry import AceAzureFoundry, get_ace_azure_foundry
 from ...utils.common.logger import Logger
 from ...utils.errors import EmbeddingError, ValidationError
 
@@ -19,7 +19,7 @@ _BATCH_SIZE = 64
 class EmbeddingService:
     def __init__(self, foundry: AceAzureFoundry | None = None) -> None:
         self._validate_config()
-        self._foundry = foundry or AceAzureFoundry()
+        self._foundry = foundry or get_ace_azure_foundry()
 
     @staticmethod
     def _validate_config() -> None:
