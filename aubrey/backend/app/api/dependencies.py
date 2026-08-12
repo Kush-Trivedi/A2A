@@ -1,0 +1,45 @@
+from ..security.oauth_client import EntraOauthClient
+from ..security.oauth_state import OAuthStateManager, get_oauth_state_manager
+from ..security.session import SessionStore, get_session_store
+from ..security.settings import AuthSettings, get_auth_settings
+from ..services.agents import (
+    AgentRegistryService,
+    TeamTokenService,
+    get_agent_registry_service,
+    get_team_token_service,
+)
+from ..services.authz import AuthzLoginService, get_authz_login_service
+
+
+class ServiceContainer:
+    def auth_settings(self) -> AuthSettings:
+        return get_auth_settings()
+
+    def session_store(self) -> SessionStore:
+        return get_session_store()
+
+    def oauth_state_manager(self) -> OAuthStateManager:
+        return get_oauth_state_manager()
+
+    def oauth_client(self) -> EntraOauthClient:
+        return EntraOauthClient(get_auth_settings())
+
+    def login_service(self) -> AuthzLoginService:
+        return get_authz_login_service()
+
+    def agent_registry_service(self) -> AgentRegistryService:
+        return get_agent_registry_service()
+
+    def team_token_service(self) -> TeamTokenService:
+        return get_team_token_service()
+
+
+container = ServiceContainer()
+
+provide_auth_settings = container.auth_settings
+provide_session_store = container.session_store
+provide_oauth_state_manager = container.oauth_state_manager
+provide_oauth_client = container.oauth_client
+provide_login_service = container.login_service
+provide_agent_registry_service = container.agent_registry_service
+provide_team_token_service = container.team_token_service
