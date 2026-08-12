@@ -1,6 +1,6 @@
 import json
-from ..config.application_context import get_application_context
-from ..utils.common.logger import Logger
+from ...config.application_context import get_application_context
+from ...utils.common.logger import Logger
 from .jwt_validator import ValidatedIdentity
 
 logger = Logger(__name__).get_logger()

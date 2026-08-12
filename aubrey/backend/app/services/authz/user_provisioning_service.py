@@ -10,7 +10,7 @@ from ...entity.authz.user_entra_group_assignment_entity import (
     UserEntraGroupAssignmentEntity,
 )
 from ...entity.authz.user_role_assignment_entity import UserRoleAssignmentEntity
-from ...security.jwt_validator import ValidatedIdentity
+from ...security.identity.jwt_validator import ValidatedIdentity
 from ...utils.common.logger import Logger
 
 logger = Logger(__name__).get_logger()

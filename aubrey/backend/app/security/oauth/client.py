@@ -4,8 +4,8 @@ import secrets
 from dataclasses import dataclass
 from urllib.parse import urlencode
 import httpx
-from ..utils.common.logger import Logger
-from .settings import AuthSettings, get_auth_settings
+from ...utils.common.logger import Logger
+from ..settings import AuthSettings, get_auth_settings
 
 logger = Logger(__name__).get_logger()
 

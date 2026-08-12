@@ -1,5 +1,5 @@
 from ...config.application_context import get_application_context
-from ...security.jwt_validator import ValidatedIdentity
+from ...security.identity.jwt_validator import ValidatedIdentity
 
 class IdentityAuthorizationAttributes:
     def __init__(self, claim_names: tuple[str, ...] | None = None) -> None:

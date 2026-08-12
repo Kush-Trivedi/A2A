@@ -1,7 +1,7 @@
 import time
 from typing import Any
 import httpx
-from ..utils.common.logger import Logger
+from ...utils.common.logger import Logger
 
 logger = Logger(__name__).get_logger()
 

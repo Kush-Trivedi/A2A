@@ -1,5 +1,8 @@
-from ..security.oauth_client import EntraOauthClient
-from ..security.oauth_state import OAuthStateManager, get_oauth_state_manager
+from ..security.oauth import (
+    EntraOauthClient,
+    OAuthStateManager,
+    get_oauth_state_manager,
+)
 from ..security.session import SessionStore, get_session_store
 from ..security.settings import AuthSettings, get_auth_settings
 from ..services.agents import (

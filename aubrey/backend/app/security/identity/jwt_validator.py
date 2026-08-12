@@ -3,9 +3,9 @@ from jwt import PyJWK
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any
-from ..utils.common.logger import Logger
+from ...utils.common.logger import Logger
 from .jwks_cache import JWKSCache
-from .settings import AuthSettings, get_auth_settings
+from ..settings import AuthSettings, get_auth_settings
 
 logger = Logger(__name__).get_logger()
 

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from functools import lru_cache
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from .settings import AuthSettings, get_auth_settings
+from ..settings import AuthSettings, get_auth_settings
 
 _STATE_SALT = "ace.oauth.state.v1"
 _STATE_MAX_AGE_SECONDS = 600

@@ -1,6 +1,6 @@
 from dataclasses import replace
 from .jwt_validator import ValidatedIdentity
-from .oauth_client import EntraUserProfile
+from ..oauth.client import EntraUserProfile
 
 
 class IdentityProfileEnricher:

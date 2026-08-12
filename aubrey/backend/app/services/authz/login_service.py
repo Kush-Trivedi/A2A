@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from functools import lru_cache
 from ...database.rdbms.pg_session import get_postgres_connector
-from ...security.jwt_validator import ValidatedIdentity
+from ...security.identity.jwt_validator import ValidatedIdentity
 from ...utils.common.logger import Logger
 from .identity_attributes import IdentityAuthorizationAttributes
 from .role_resolution_service import ResolvedRoles, RoleResolutionService

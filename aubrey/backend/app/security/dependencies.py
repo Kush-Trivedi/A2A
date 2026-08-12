@@ -1,7 +1,7 @@
 from fastapi import Request, Response
 from ..utils.common.logger import Logger
 from ..utils.errors import CsrfValidationError, UnauthorizedError
-from .cookies import SessionCookieManager
+from .session.cookies import SessionCookieManager
 from .session import SessionContext, SessionStore, get_session_store
 
 logger = Logger(__name__).get_logger()

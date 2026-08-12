@@ -1,5 +1,5 @@
 from fastapi import Response
-from .settings import AuthSettings, get_auth_settings
+from ..settings import AuthSettings, get_auth_settings
 
 class SessionCookieManager:
     def __init__(self, settings: AuthSettings | None = None) -> None:

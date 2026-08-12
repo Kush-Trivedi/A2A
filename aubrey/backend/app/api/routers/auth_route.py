@@ -6,14 +6,15 @@ from fastapi.responses import RedirectResponse
 from ...config.application_context import get_application_context
 from ...dto.auth_models import AuthModeResponse, MeResponse, UserProfileResponse
 from ...dto.base import ApiEnvelope
-from ...security.cookies import SessionCookieManager
 from ...security.dependencies import get_current_context, get_optional_context
-from ...security.identity_diagnostics import IdentityClaimDiagnostics
-from ...security.identity_profile import IdentityProfileEnricher
-from ...security.jwt_validator import JWTValidator, get_jwt_validator
-from ...security.oauth_client import EntraOauthClient
-from ...security.oauth_state import OAuthState, OAuthStateManager
-from ...security.session import SessionContext, SessionStore
+from ...security.identity import (
+    IdentityClaimDiagnostics,
+    IdentityProfileEnricher,
+    JWTValidator,
+    get_jwt_validator,
+)
+from ...security.oauth import EntraOauthClient, OAuthState, OAuthStateManager
+from ...security.session import SessionContext, SessionCookieManager, SessionStore
 from ...security.settings import AuthSettings
 from ...services.authz import AuthzLoginService, LoginProvisioning
 from ...utils.common.logger import Logger
