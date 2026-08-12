@@ -26,9 +26,11 @@ from .....services.documents import (
     PipelineResult,
     SharePointSourceService,
 )
+from .....services.knowledge import KnowledgeSinkFactory
 from ....dependencies import (
     provide_blob_source_service,
     provide_connection_service,
+    provide_knowledge_sink_factory,
     provide_sharepoint_source_service,
 )
 
@@ -107,6 +109,7 @@ async def ingest_blob(
     body: BlobIngestRequest,
     context: SessionContext = Depends(get_current_context),
     service: BlobSourceService = Depends(provide_blob_source_service),
+    sinks: KnowledgeSinkFactory = Depends(provide_knowledge_sink_factory),
 ) -> ApiEnvelope[IngestResultModel]:
     result = await service.ingest(
         context=context,
@@ -116,6 +119,11 @@ async def ingest_blob(
         prefix=body.prefix,
         file_name=body.file_name,
         blob_url=body.blob_url,
+        sink=sinks.make_sink(
+            tenant_id=context.tenant_id,
+            chunking_strategy=body.chunking_strategy,
+            build_graph=body.build_graph,
+        ),
     )
     return ApiEnvelope(data=_to_result(result), message="Ingestion batch finished.")
 
@@ -129,6 +137,7 @@ async def ingest_sharepoint(
     body: SharePointIngestRequest,
     context: SessionContext = Depends(get_current_context),
     service: SharePointSourceService = Depends(provide_sharepoint_source_service),
+    sinks: KnowledgeSinkFactory = Depends(provide_knowledge_sink_factory),
 ) -> ApiEnvelope[IngestResultModel]:
     result = await service.ingest(
         context=context,
@@ -137,5 +146,10 @@ async def ingest_sharepoint(
         connection_key=body.connection_key,
         folder_path=body.folder_path,
         file_name=body.file_name,
+        sink=sinks.make_sink(
+            tenant_id=context.tenant_id,
+            chunking_strategy=body.chunking_strategy,
+            build_graph=body.build_graph,
+        ),
     )
     return ApiEnvelope(data=_to_result(result), message="Ingestion batch finished.")

@@ -70,6 +70,29 @@ class AceAzureFoundry:
         )
 
 
+    async def acomplete_chat(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        max_output_tokens: int | None = None,
+    ) -> str:
+        """Non-streaming completion — for structured outputs (e.g. entity
+        extraction) where the full response is parsed as one piece."""
+        deployment = model or self.chat_deployment
+        client = self.azure_client_factory.get_async_client(
+            deployment=deployment,
+            api_version=self.chat_api_version,
+        )
+        response = await client.chat.completions.create(
+            messages=messages,
+            model=deployment,
+            max_completion_tokens=max_output_tokens or self.max_output_tokens,
+        )
+        if not response.choices:
+            return ""
+        return response.choices[0].message.content or ""
+
     async def astream_chat(
         self,
         *,

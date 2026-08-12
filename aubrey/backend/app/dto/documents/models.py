@@ -30,6 +30,9 @@ class BlobIngestRequest(StrictBaseModel):
     prefix: str = ""
     file_name: str | None = None
     blob_url: str | None = None  # single-file fetch — the Event Grid path
+    # plain | recursive | hierarchical | hybrid — sizes are always adaptive
+    chunking_strategy: str = "recursive"
+    build_graph: bool = True  # extract GraphRAG entities per chunk (LLM cost)
 
 
 class SharePointIngestRequest(StrictBaseModel):
@@ -38,6 +41,9 @@ class SharePointIngestRequest(StrictBaseModel):
     connection_key: str
     folder_path: str = ""
     file_name: str | None = None
+    # plain | recursive | hierarchical | hybrid — sizes are always adaptive
+    chunking_strategy: str = "recursive"
+    build_graph: bool = True  # extract GraphRAG entities per chunk (LLM cost)
 
 
 class IngestResultModel(StrictBaseModel):

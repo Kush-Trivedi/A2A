@@ -221,6 +221,8 @@ class DocumentPipeline:
     ) -> str:
         sha256 = hashlib.sha256(content).hexdigest()
 
+        existing_id: str | None = None
+        needs_embedding = False
         async with self._db.session() as session:
             existing = (
                 await session.exec(
@@ -234,17 +236,23 @@ class DocumentPipeline:
                 granted = await self._ensure_grant(
                     session, tenant_id, existing.id, team_key, agent_key
                 )
-                if granted:
-                    logger.info(
-                        "Existing content granted to agent (no re-conversion)",
-                        extra={"file_name": file_name, "agent_key": agent_key},
-                    )
-                    return "linked"
-                logger.info(
-                    "Duplicate document skipped (already granted)",
-                    extra={"file_name": file_name, "agent_key": agent_key},
-                )
-                return "skipped"
+                existing_id = existing.id
+                needs_embedding = existing.status == DocumentStatus.CONVERTED
+                outcome = "linked" if granted else "skipped"
+
+        if existing_id is not None:
+            # Self-heal: a document whose earlier embedding run failed is
+            # still 'converted' — finish the job now instead of skipping it.
+            if needs_embedding and sink is not None:
+                text = await self._markitdown.aconvert_bytes(content, file_name)
+                await sink(existing_id, file_name, text)
+            logger.info(
+                "Existing content granted to agent (no re-conversion)"
+                if outcome == "linked"
+                else "Duplicate document skipped (already granted)",
+                extra={"file_name": file_name, "agent_key": agent_key},
+            )
+            return outcome
 
         # New content — the only path that pays for conversion.
         try:
