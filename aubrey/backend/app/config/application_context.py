@@ -44,6 +44,7 @@ class ApplicationContext:
         self.security = content["security"]
         self.authorization = content["authorization"]
         self.knowledge = content["knowledge"]
+        self.agents = content["agents"]
         logger.info("Configuration loaded for environment: %s", self.environment)
 
     def _value_with_overrides(
@@ -155,6 +156,14 @@ class ApplicationContext:
     @knowledge.setter
     def knowledge(self, variables: Dict[str, Any]) -> None:
         self._knowledge = self._resolve_section("AUBREY_KNOWLEDGE", variables)
+
+    @property
+    def agents(self) -> Dict[str, Any]:
+        return self._agents
+
+    @agents.setter
+    def agents(self, variables: Dict[str, Any]) -> None:
+        self._agents = self._resolve_section("AUBREY_AGENTS", variables)
 
 
 @lru_cache(maxsize=1)

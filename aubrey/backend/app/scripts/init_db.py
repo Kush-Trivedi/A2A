@@ -3,6 +3,7 @@ from sqlmodel import SQLModel
 from ..database.rdbms.pg_session import get_postgres_connector
 from ..entity import agents as _agent_entities  # noqa: F401 — registers tables
 from ..entity import authz as _authz_entities  # noqa: F401 — registers tables
+from ..entity import chat as _chat_entities  # noqa: F401 — registers tables
 from ..entity import documents as _document_entities  # noqa: F401 — registers tables
 from ..entity import knowledge as _knowledge_entities  # noqa: F401 — registers tables
 from ..entity.knowledge import ensure_pgvector_extension, ensure_pgvector_indexes

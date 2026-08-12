@@ -97,3 +97,10 @@ knowledge:
       entity_top_k: 5
       entity_min_similarity: 0.45
       hop_decay: 0.7
+
+# Agent-facing platform config; router keys join this section at M3.
+agents:
+  memory:
+    # conversation window (tokens) sent to agents each turn; a team manifest
+    # can lower it per agent later
+    window_tokens: 2000
