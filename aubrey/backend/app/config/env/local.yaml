@@ -85,15 +85,15 @@ authorization:
 # Retrieval numbers live here (env config), never as code constants.
 knowledge:
   retrieval:
-    mode: "hybrid"              # dense | sparse | hybrid (RRF fusion)
+    mode: "sparse"              # local: full-text only (no model creds); cloud envs run hybrid
     top_k: 8
     candidates: 32
     min_similarity: 0.25
     rrf_k: 60
     neighbor_window: 1
     neighbor_decay: 0.9
-    graph:                      # 1-hop GraphRAG expansion
-      enabled: true
+    graph:                      # 1-hop GraphRAG expansion (needs the embedding endpoint)
+      enabled: false
       entity_top_k: 5
       entity_min_similarity: 0.45
       hop_decay: 0.7

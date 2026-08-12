@@ -1,3 +1,8 @@
+from .agent_catalog_service import (
+    AgentCatalogService,
+    CatalogAgent,
+    get_agent_catalog_service,
+)
 from .question_router_service import (
     QuestionRouterService,
     RouteAction,
@@ -15,7 +20,10 @@ from .route_index_service import (
 from .team_token_service import TeamTokenService, get_team_token_service
 
 __all__ = [
+    "AgentCatalogService",
     "AgentRegistryService",
+    "CatalogAgent",
+    "get_agent_catalog_service",
     "QuestionRouterService",
     "RouteAction",
     "RouteCandidate",

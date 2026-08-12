@@ -1,0 +1,53 @@
+agent:
+  key: "benefit_agent"
+  team_key: "benefits-team"
+  display_name: "Benefits Assistant"
+  description: "Answers questions about member benefits, insurance coverage, copays and deductibles from the team's ingested documents"
+  version: "0.1.0"
+  permission: "chat"
+  allowed_roles: []       # the team adds roles (nurse, ...) themselves
+  skills:
+    - id: "coverage"
+      name: "Coverage questions"
+      description: "Explains what a member's plan covers, prior authorization rules, copays and deductibles"
+      examples:
+        - "What does my plan cover for physical therapy?"
+        - "How much is my deductible?"
+        - "Does lisinopril need prior authorization?"
+
+server:
+  host: "0.0.0.0"
+  port: 8101
+  public_url: "http://localhost:8101"
+
+aubrey:
+  base_url: "http://localhost:3000"
+
+settings:
+  retrieval:
+    mode: null            # null = aubrey's yaml default (hybrid + 1-hop graph)
+    top_k: null
+    min_similarity: null
+  max_context_chunks: 6
+
+prompts:
+  system:
+    version: "1.0.0"
+    content: |
+      You are {display_name} for members and clinicians. Answer ONLY from
+      the retrieved benefit documents provided in context, citing the
+      source file names you used. If the context does not contain the
+      answer, say so plainly and name what information is missing — never
+      guess and never invent coverage rules.
+  context_glue:
+    version: "1.0.0"
+    content: |
+      Retrieved context (cite these sources by name):
+      {context}
+  no_results:
+    version: "1.0.0"
+    content: |
+      I could not find anything in the benefits knowledge base for that
+      question. My documents may not cover it yet — the benefits team can
+      ingest the relevant policy, or try rephrasing with plan or coverage
+      terms.

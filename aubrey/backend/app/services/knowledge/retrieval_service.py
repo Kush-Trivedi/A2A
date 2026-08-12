@@ -108,9 +108,17 @@ def _vector_literal(vector: list[float]) -> str:
 
 class RetrievalService:
     def __init__(self, embeddings: EmbeddingService | None = None) -> None:
-        self._embeddings = embeddings or get_embedding_service()
+        # Lazy: sparse-only retrieval must work with no embedding endpoint
+        # configured; the service is built the first time vectors are needed.
+        self._embeddings_override = embeddings
         self._db = get_postgres_connector()
         self._settings = get_retrieval_settings()
+
+    @property
+    def _embeddings(self) -> EmbeddingService:
+        if self._embeddings_override is None:
+            self._embeddings_override = get_embedding_service()
+        return self._embeddings_override
 
     async def retrieve(
         self,

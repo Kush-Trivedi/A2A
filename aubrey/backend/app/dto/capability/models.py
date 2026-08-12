@@ -51,3 +51,19 @@ class LlmStreamRequest(StrictBaseModel):
     agent_key: str
     messages: list[ChatMessageModel]
     max_output_tokens: int | None = None
+
+
+class CatalogRequest(StrictBaseModel):
+    envelope: ContextEnvelopeModel
+    agent_key: str
+
+
+class CatalogAgentModel(StrictBaseModel):
+    agent_key: str
+    display_name: str
+    description: str
+    team_key: str
+
+
+class CatalogResponse(StrictBaseModel):
+    agents: list[CatalogAgentModel]

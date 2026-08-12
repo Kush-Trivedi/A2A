@@ -21,6 +21,9 @@ from .....config.application_context import get_application_context
 from .....config.settings_validator import PlaceholderPolicy
 from .....dto.base import ApiEnvelope
 from .....dto.capability import (
+    CatalogAgentModel,
+    CatalogRequest,
+    CatalogResponse,
     LlmStreamRequest,
     RetrievedChunkModel,
     RetrieveRequest,
@@ -33,6 +36,7 @@ from .....security.service_auth import (
     require_service_token,
     resolve_owned_agent,
 )
+from .....services.agents.agent_catalog_service import get_agent_catalog_service
 from .....services.knowledge.retrieval_service import (
     RetrievalService,
     get_retrieval_service,
@@ -103,6 +107,34 @@ async def retrieve_knowledge(
                 )
                 for c in chunks
             ],
+        )
+    )
+
+
+@capability_router.post(
+    "/agents/catalog", response_model=ApiEnvelope[CatalogResponse]
+)
+async def agents_catalog(
+    body: CatalogRequest,
+    token: TeamTokenEntity = Depends(require_service_token),
+) -> ApiEnvelope[CatalogResponse]:
+    """Live Casbin-scoped catalog for the forwarded user — what the general
+    agent grounds its 'what can I access?' answers on."""
+    await resolve_owned_agent(token=token, agent_key=body.agent_key)
+    agents = await get_agent_catalog_service().list_for(
+        tenant_id=token.tenant_id, roles=tuple(body.envelope.roles)
+    )
+    return ApiEnvelope(
+        data=CatalogResponse(
+            agents=[
+                CatalogAgentModel(
+                    agent_key=a.agent_key,
+                    display_name=a.display_name,
+                    description=a.description,
+                    team_key=a.team_key,
+                )
+                for a in agents
+            ]
         )
     )
 

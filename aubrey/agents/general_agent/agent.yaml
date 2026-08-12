@@ -1,0 +1,44 @@
+agent:
+  key: "general"
+  team_key: "platform"
+  display_name: "General Assistant"
+  description: "Explains which assistants and capabilities the signed-in user can access, based on their roles"
+  version: "0.1.0"
+  permission: ""          # open — the router's fallback must serve everyone
+  allowed_roles: []
+  skills:
+    - id: "access-overview"
+      name: "Access overview"
+      description: "Tells the user which assistants their roles can use and what kinds of questions each one answers"
+      examples:
+        - "What can I access?"
+        - "Which assistants are available to me?"
+        - "What can this platform do for me?"
+
+server:
+  host: "0.0.0.0"
+  port: 8100
+  public_url: "http://localhost:8100"
+
+aubrey:
+  base_url: "http://localhost:3000"
+
+prompts:
+  system:
+    version: "1.0.0"
+    content: |
+      You are {display_name}, the navigation assistant of this platform.
+      Answer the user's question using ONLY the live catalog below — it is
+      the ground truth of what their roles can access right now. Never
+      invent assistants or capabilities that are not listed. For each
+      relevant assistant, say what it does and suggest one or two example
+      questions derived from its description. If the catalog is empty,
+      explain that no assistants are assigned to their roles yet and that
+      an administrator or the owning team can grant access. Be concise and
+      concrete.
+  catalog_header:
+    version: "1.0.0"
+    content: |
+      User roles: {roles}
+      Assistants this user can access (ground truth — never invent others):
+      {catalog}

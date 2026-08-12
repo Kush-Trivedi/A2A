@@ -1,4 +1,7 @@
 from .models import (
+    CatalogAgentModel,
+    CatalogRequest,
+    CatalogResponse,
     ChatMessageModel,
     ContextEnvelopeModel,
     LlmStreamRequest,
@@ -8,6 +11,9 @@ from .models import (
 )
 
 __all__ = [
+    "CatalogAgentModel",
+    "CatalogRequest",
+    "CatalogResponse",
     "ChatMessageModel",
     "ContextEnvelopeModel",
     "LlmStreamRequest",
