@@ -5,9 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 
 from .api.exception_handlers import register_exception_handlers
-from .api.routers.auth_route import auth_router, oauth_compact_router
 from .api.routers.health_check_route import health_check_router
-from .api.routers.registry_route import onboarding_router, registry_router
+from .api.routers.v1 import oauth_compact_router, v1_router
 from .config.application_context import get_application_context
 from .config.settings_validator import get_settings_validator
 from .database.rdbms.pg_session import dispose_postgres
@@ -65,9 +64,7 @@ class ApplicationFactory:
 
         register_exception_handlers(app)
         app.include_router(health_check_router)
-        app.include_router(auth_router, prefix="/api/v1")
-        app.include_router(registry_router, prefix="/api/v1")
-        app.include_router(onboarding_router, prefix="/api/v1")
+        app.include_router(v1_router)
         app.include_router(oauth_compact_router)
         return app
 

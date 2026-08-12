@@ -3,28 +3,28 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.responses import RedirectResponse
 
-from ...config.application_context import get_application_context
-from ...dto.auth import AuthModeResponse, MeResponse, UserProfileResponse
-from ...dto.base import ApiEnvelope
-from ...security.dependencies import get_current_context, get_optional_context
-from ...security.identity import (
+from .....config.application_context import get_application_context
+from .....dto.auth import AuthModeResponse, MeResponse, UserProfileResponse
+from .....dto.base import ApiEnvelope
+from .....security.dependencies import get_current_context, get_optional_context
+from .....security.identity import (
     IdentityClaimDiagnostics,
     IdentityProfileEnricher,
     JWTValidator,
     get_jwt_validator,
 )
-from ...security.oauth import EntraOauthClient, OAuthState, OAuthStateManager
-from ...security.session import SessionContext, SessionCookieManager, SessionStore
-from ...security.settings import AuthSettings
-from ...services.authz import AuthzLoginService, LoginProvisioning
-from ...utils.common.logger import Logger
-from ...utils.errors import (
+from .....security.oauth import EntraOauthClient, OAuthState, OAuthStateManager
+from .....security.session import SessionContext, SessionCookieManager, SessionStore
+from .....security.settings import AuthSettings
+from .....services.authz import AuthzLoginService, LoginProvisioning
+from .....utils.common.logger import Logger
+from .....utils.errors import (
     ExternalServiceError,
     InvalidTokenError,
     NotFoundError,
     OAuthStateError,
 )
-from ..dependencies import (
+from ....dependencies import (
     provide_auth_settings,
     provide_login_service,
     provide_oauth_client,

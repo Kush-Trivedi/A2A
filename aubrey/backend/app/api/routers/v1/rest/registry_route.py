@@ -9,8 +9,8 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request, status
 
-from ...dto.base import ApiEnvelope
-from ...dto.registry import (
+from .....dto.base import ApiEnvelope
+from .....dto.registry import (
     AgentModel,
     AgentRegistrationResponse,
     RegisterAgentRequest,
@@ -19,13 +19,13 @@ from ...dto.registry import (
     TeamTokenResponse,
     UpdateAgentStatusRequest,
 )
-from ...entity.agents import OdtTeamEntity, RegisteredAgentEntity, TeamTokenEntity
-from ...security.authorization import require_permission
-from ...security.dependencies import get_current_context, require_csrf
-from ...security.session import SessionContext
-from ...services.agents import AgentRegistryService, TeamTokenService
-from ...utils.errors import UnauthorizedError, ValidationError
-from ..dependencies import (
+from .....entity.agents import OdtTeamEntity, RegisteredAgentEntity, TeamTokenEntity
+from .....security.authorization import require_permission
+from .....security.dependencies import get_current_context, require_csrf
+from .....security.session import SessionContext
+from .....services.agents import AgentRegistryService, TeamTokenService
+from .....utils.errors import UnauthorizedError, ValidationError
+from ....dependencies import (
     provide_agent_registry_service,
     provide_team_token_service,
 )
@@ -183,7 +183,7 @@ async def require_team_token(request: Request) -> TeamTokenEntity:
     scheme, _, credential = authorization.partition(" ")
     if scheme.strip().lower() != "bearer" or not credential.strip():
         raise UnauthorizedError("A team registration token is required (Bearer).")
-    from ..dependencies import container
+    from ....dependencies import container
 
     token = await container.team_token_service().validate(credential.strip())
     if token is None:
