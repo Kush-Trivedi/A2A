@@ -8,7 +8,7 @@ class RegisterConnectionRequest(StrictBaseModel):
     connection_key: str
     source_type: str  # blob | sharepoint
     description: str = ""
-    # blob: {account_url, container} — sharepoint: {hostname, site_path, drive_name}
+    # blob: {account_url, container} — sharepoint: {site_path, drive_name}
     config: dict[str, str]
 
 

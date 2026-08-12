@@ -22,7 +22,9 @@ logger = Logger(__name__).get_logger()
 
 _REQUIRED_CONFIG = {
     ConnectionType.BLOB: ("account_url", "container"),
-    ConnectionType.SHAREPOINT: ("hostname", "site_path", "drive_name"),
+    # The SharePoint host is tenant-wide and lives in the env yaml
+    # (microsoft.sharepoint.hostname) — teams only differ by site + drive.
+    ConnectionType.SHAREPOINT: ("site_path", "drive_name"),
 }
 
 

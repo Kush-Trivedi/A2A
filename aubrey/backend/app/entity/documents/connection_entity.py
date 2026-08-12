@@ -32,7 +32,7 @@ class ConnectionEntity(TimestampModel, table=True):
     connection_key: str = Field(sa_column=Column(Text, nullable=False))
     source_type: str = Field(sa_column=Column(Text, nullable=False))  # blob | sharepoint
     description: str = Field(default="", sa_column=Column(Text, nullable=False, default=""))
-    # blob: {account_url, container} — sharepoint: {hostname, site_path, drive_name}
+    # blob: {account_url, container} — sharepoint: {site_path, drive_name}
     config: dict[str, Any] = Field(
         default_factory=dict,
         sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")),

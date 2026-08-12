@@ -1,8 +1,8 @@
 """SharePoint source. WHERE to read comes from the team's registered
-connection (hostname + site_path + drive_name); a folder is listed
-recursively, or one named file. Credentials stay platform-held — the app
-registration in microsoft.sharepoint, granted Sites.Selected on the team's
-site. Everything downloads per file and flows through the DocumentPipeline."""
+connection (site_path + drive_name); a folder is listed recursively, or one
+named file. Credentials and the tenant-wide host stay platform-held — the
+app registration in microsoft.sharepoint, granted Sites.Selected on the
+team's site. Everything downloads per file, into the DocumentPipeline."""
 
 import asyncio
 
@@ -34,13 +34,17 @@ class SharePointSourceService:
         self._connections = connections or get_connection_service()
 
     @staticmethod
-    def _client() -> SharePointClient:
+    def _settings() -> dict:
         cfg = get_application_context().microsoft.get("sharepoint", {}) or {}
-        for key in ("tenant_id", "client_id", "client_secret"):
+        for key in ("tenant_id", "client_id", "client_secret", "hostname"):
             if not PlaceholderPolicy.is_configured(cfg.get(key)):
                 raise ValidationError(
                     f"SharePoint is not configured. Set microsoft.sharepoint.{key} in the env yaml."
                 )
+        return cfg
+
+    def _client(self) -> SharePointClient:
+        cfg = self._settings()
         return SharePointClient(
             tenant_id=cfg["tenant_id"],
             client_id=cfg["client_id"],
@@ -101,7 +105,9 @@ class SharePointSourceService:
     def _list_files(self, location: dict, folder_path: str) -> list[SourceFile]:
         client = self._client()
         try:
-            site_id = client.get_site_id(location["hostname"], location["site_path"])
+            site_id = client.get_site_id(
+                self._settings()["hostname"], location["site_path"]
+            )
             drive = client.get_drive_by_name(site_id, location["drive_name"])
             drive_id = drive["id"]
             folder_id = (
