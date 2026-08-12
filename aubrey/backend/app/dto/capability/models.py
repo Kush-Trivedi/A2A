@@ -58,6 +58,27 @@ class CatalogRequest(StrictBaseModel):
     agent_key: str
 
 
+class FilesContextRequest(StrictBaseModel):
+    """Session-scoped uploads for the envelope's session — the file
+    agent's only knowledge source. The session id comes from the envelope
+    (contextId), never as a free parameter."""
+
+    envelope: ContextEnvelopeModel
+    agent_key: str
+
+
+class SessionDocumentModel(StrictBaseModel):
+    file_name: str
+    sha256: str
+    characters: int
+    content: str
+
+
+class FilesContextResponse(StrictBaseModel):
+    session_id: str
+    documents: list[SessionDocumentModel]
+
+
 class CatalogAgentModel(StrictBaseModel):
     agent_key: str
     display_name: str

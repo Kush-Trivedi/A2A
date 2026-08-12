@@ -4,10 +4,13 @@ from .models import (
     CatalogResponse,
     ChatMessageModel,
     ContextEnvelopeModel,
+    FilesContextRequest,
+    FilesContextResponse,
     LlmStreamRequest,
     RetrievedChunkModel,
     RetrieveRequest,
     RetrieveResponse,
+    SessionDocumentModel,
 )
 
 __all__ = [
@@ -16,8 +19,11 @@ __all__ = [
     "CatalogResponse",
     "ChatMessageModel",
     "ContextEnvelopeModel",
+    "FilesContextRequest",
+    "FilesContextResponse",
     "LlmStreamRequest",
     "RetrieveRequest",
     "RetrieveResponse",
     "RetrievedChunkModel",
+    "SessionDocumentModel",
 ]

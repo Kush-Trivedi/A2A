@@ -71,3 +71,6 @@ class FileUploadResponse(StrictBaseModel):
     size_bytes: int
     prepared: list[PreparedFileModel]
     failed: list[FailedFileModel]
+    # set when the upload was attached to a chat session for the file agent
+    session_id: str | None = None
+    stored: int = 0  # persisted to the session (identical re-uploads skip)

@@ -1,0 +1,288 @@
+# Aubrey — Local Run Guide
+
+End-to-end steps to bring up the platform, register teams and agents, ingest
+documents, and get streamed answers. Admin operations (teams, tokens,
+activation, connections, ingestion) are done in **Swagger** (`/docs`); answer
+streaming is consumed by the **frontend UI** (curl fallback included for
+debugging).
+
+## Topology
+
+| Process | Where | Port | Start command |
+|---|---|---|---|
+| aubrey backend | `aubrey/` | 3000 | `uv run python -m backend.app.app` |
+| frontend UI | your frontend project | 5173 | your dev command (e.g. `npm run dev`) |
+| general agent | `aubrey/agents/` | 8100 | `uv run python -m general_agent.app.main` |
+| benefit agent | `aubrey/agents/` | 8101 | `uv run python -m benefit_agent.app.main` |
+| policy & procedure agent | `aubrey/agents/` | 8102 | `uv run python -m policy_procedure_agent.app.main` |
+| file agent | `aubrey/agents/` | 8103 | `uv run python -m file_agent.app.main` |
+
+Data pairing (who is grounded on what):
+
+| Agent | Team | Knowledge source |
+|---|---|---|
+| `general` | `platform` | live agent catalog (no documents) |
+| `file_agent` | `platform` | **session uploads** — answers only from files uploaded into the current conversation |
+| `benefit_agent` | `hr-team` | **SharePoint** ingestion |
+| `policy_procedure_agent` | `hr-team` | **Blob storage** ingestion |
+
+The pairing is created at **ingest time** (`agent_key` on the ingest request
+creates the document grants) — agent code is identical either way.
+
+## 0. Prerequisites (one-time)
+
+- Postgres with the **pgvector** extension, reachable with the creds in
+  `backend/app/config/env/local.yaml` → `database.postgres`. Tables and
+  indexes are created automatically at backend startup — no migration step.
+- Real values in `local.yaml` for:
+  - `microsoft.entra.*` — browser login (OAuth).
+  - `microsoft.azure.azure_foundry.*` with a `text_completion` deployment —
+    every agent streams its answer through `/capability/llm/chat/stream`.
+  - `microsoft.sharepoint.*` — only for the SharePoint ingest (benefit agent).
+  - Blob connections use `account_url` + `container` per connection (below);
+    auth per your Azure setup.
+  - NOT needed locally: embedding creds — `knowledge.retrieval.mode` and
+    `agents.router.mode` are `sparse` (full-text), graph disabled.
+- Install both uv projects (separate venvs):
+
+  ```powershell
+  cd aubrey;        uv sync
+  cd aubrey\agents; uv sync
+  ```
+
+- Frontend origin: `http://localhost:5173` is already in
+  `security.cors.allowed_origins`; add yours if it differs.
+- If the backend loads the wrong env file, set `$env:ENV = "local"` first.
+
+## 1. Start the aubrey backend (terminal 1)
+
+```powershell
+cd aubrey
+uv run python -m backend.app.app
+```
+
+Port 3000. The startup validator prints the exact yaml path of any
+placeholder credential — fix those before continuing.
+
+## 2. Log in (browser)
+
+Open `http://localhost:3000/api/v1/auth/login` → Entra sign-in → you are
+redirected to `/docs` with the `aubrey_session` and `aubrey_session_csrf`
+cookies set. The frontend shares the same cookies (same origin rules), so
+logging in once covers both.
+
+## 3. Authorize Swagger
+
+In `/docs`, call **GET `/api/v1/auth/me`** — the response includes
+`csrf_token`. Click **Authorize** and paste it (header `X-CSRF-Token`).
+Authorization persists across page refreshes.
+
+## 4. Register the teams
+
+**POST `/api/v1/admin/teams`** — twice (keys must match each `agent.yaml`
+manifest exactly). Two teams, two agents each:
+
+```json
+{"key": "platform", "name": "Platform Team", "description": "Owns the general and file agents",                "contact_email": "you@example.com"}
+{"key": "hr-team",  "name": "HR Team",       "description": "Benefits coverage and policies & procedures",     "contact_email": "you@example.com"}
+```
+
+## 5. Issue team tokens (shown exactly once — copy each immediately)
+
+- **POST `/api/v1/admin/teams/platform/tokens`** — for `general` + `file_agent`
+- **POST `/api/v1/admin/teams/hr-team/tokens`** — for `benefit_agent` + `policy_procedure_agent`
+
+## 6. Start the agents (terminals 2–4)
+
+Agents **self-register on boot** (retry every 3 s for ~2 min, idempotent) —
+you never register them by hand. Each terminal:
+
+```powershell
+# terminal 2 — general agent (8100)
+cd aubrey\agents
+$env:AGENT_TEAM_TOKEN = "<platform token>"
+uv run python -m general_agent.app.main
+
+# terminal 3 — file agent (8103; platform-owned, same token as general)
+cd aubrey\agents
+$env:AGENT_TEAM_TOKEN = "<platform token>"
+uv run python -m file_agent.app.main
+
+# terminal 4 — benefit agent (8101)
+cd aubrey\agents
+$env:AGENT_TEAM_TOKEN = "<hr-team token>"
+uv run python -m benefit_agent.app.main
+
+# terminal 5 — policy & procedure agent (8102)
+cd aubrey\agents
+$env:AGENT_TEAM_TOKEN = "<hr-team token>"
+uv run python -m policy_procedure_agent.app.main
+```
+
+Watch for `[<agent_key>] registered with aubrey (attempt N)` in each.
+
+## 7. Activate the agents
+
+Registration leaves agents inactive on purpose (activation is an explicit
+admin gate). **GET `/api/v1/admin/agents`** to confirm all three rows, then
+**PATCH `/api/v1/admin/agents/{agent_key}/status`** with
+`{"status": "active"}` for:
+
+- `general`
+- `benefit_agent`
+- `policy_procedure_agent`
+- `file_agent`
+
+## 8. Register connections (one per team, once)
+
+**POST `/api/v1/admin/connections`**:
+
+Both belong to the HR team — one per source type:
+
+```json
+{
+  "team_key": "hr-team",
+  "connection_key": "benefits-sharepoint",
+  "source_type": "sharepoint",
+  "description": "Benefits document library",
+  "config": {"site_path": "/sites/YourSite", "drive_name": "Documents"}
+}
+```
+
+```json
+{
+  "team_key": "hr-team",
+  "connection_key": "policy-blob",
+  "source_type": "blob",
+  "description": "Policy library container",
+  "config": {"account_url": "https://<account>.blob.core.windows.net", "container": "policies"}
+}
+```
+
+(The SharePoint hostname is tenant-wide and comes from
+`microsoft.sharepoint.hostname` in the yaml — connections only differ by
+site + drive.)
+
+## 9. Ingest documents
+
+The `agent_key` on the request is what grants that agent retrieval access
+to the ingested chunks.
+
+**POST `/api/v1/documents/ingest/sharepoint`** → feeds the benefit agent:
+
+```json
+{
+  "team_key": "hr-team",
+  "agent_key": "benefit_agent",
+  "connection_key": "benefits-sharepoint",
+  "folder_path": "Benefits",
+  "file_name": null,
+  "chunking_strategy": "recursive",
+  "build_graph": false
+}
+```
+
+**POST `/api/v1/documents/ingest/blob`** → feeds the policy agent:
+
+```json
+{
+  "team_key": "hr-team",
+  "agent_key": "policy_procedure_agent",
+  "connection_key": "policy-blob",
+  "prefix": "",
+  "file_name": null,
+  "blob_url": null,
+  "chunking_strategy": "recursive",
+  "build_graph": false
+}
+```
+
+Keep `build_graph: false` locally (graph expansion needs the embedding
+endpoint; local ingestion runs sparse/full-text). The response reports
+`processed / linked / skipped / failed` for the batch.
+
+## 10. Chat
+
+**Primary — the frontend UI.** Log in through it (same Entra flow), open a
+chat, ask away. The UI consumes `POST /api/v1/chat/stream` (SSE). Events it
+must handle: `meta` (chosen agent + session id), `token` (answer text),
+`artifact`, `state`, `disambiguation` (chips — user picks an agent),
+`refusal`, `error`, `done`.
+
+Routing checks:
+
+- "What can you do?" → **general** (live catalog answer).
+- A coverage question matching your SharePoint docs → **benefit_agent**,
+  cited answer.
+- A policy question matching your blob docs → **policy_procedure_agent**,
+  cited answer.
+- Upload a file into the session, then "Summarize the file I uploaded" →
+  **file_agent**, answer strictly from the upload (see the file agent
+  section below).
+- Reusing the same session id = the token-budgeted memory window kicks in
+  (multi-turn follow-ups work).
+
+**Fallback — curl** (Swagger buffers SSE; use this to debug the stream).
+Copy the `aubrey_session` cookie from browser dev tools:
+
+```powershell
+curl.exe -N http://localhost:3000/api/v1/chat/stream -H "Content-Type: application/json" -H "X-CSRF-Token: <csrf_token from /auth/me>" -H "Cookie: aubrey_session=<cookie value>" -d "{\"question\": \"What is the hand hygiene policy?\"}"
+```
+
+Body fields: `question` (required), `session_id` (omit to start a new
+conversation), `agent_key` (pin an agent; omit to let the router decide).
+
+## File upload → file agent
+
+Whatever the user uploads into a conversation, `file_agent` answers from
+that content **only** — its prompt hard-scopes it, and the storage model
+makes cross-session leakage impossible (documents are keyed by tenant +
+user + session and deleted with the session).
+
+Flow:
+
+1. **Upload into the session.** `POST /api/v1/files/upload` (multipart)
+   with the extra form field `session_id=<chat session id>`. The prepared
+   text is persisted against that session (`stored` in the response says
+   how many documents landed; identical re-uploads are skipped). Without
+   `session_id` the endpoint stays convert-and-return — nothing persisted.
+   The UI flow: create/know the session id, upload with it, then ask.
+2. **Ask in the same session.** The router reaches `file_agent` via its
+   skill examples ("summarize the file I uploaded", ...); when the user
+   attaches a file the UI should **pin it** with `"agent_key": "file_agent"`
+   on `/chat/stream` — no routing ambiguity.
+3. **The agent fetches server-side.** `file_agent` calls
+   `POST /api/v1/capability/files/context` with its envelope; aubrey
+   re-enforces roles and returns only that session's documents for that
+   user. Newest uploads win the manifest's `max_context_chars` budget; a
+   document cut mid-way gets an explicit truncation marker.
+4. **No file yet** → the manifest-owned `no_file` answer, telling the user
+   to attach a document. Not an error, never a guess.
+
+Upload test without the UI (add the form field to Swagger's form, or):
+
+```powershell
+curl.exe http://localhost:3000/api/v1/files/upload -H "X-CSRF-Token: <csrf_token>" -H "Cookie: aubrey_session=<cookie value>" -F "file=@C:\path\to\document.pdf" -F "session_id=<session id>"
+```
+
+## Troubleshooting
+
+- **403 on admin/chat endpoints** — CSRF missing/stale: re-run
+  `/api/v1/auth/me`, re-Authorize. RBAC also applies: your login roles must
+  pass Casbin for `/api/v1/admin` (see `authorization.full_access_roles`).
+- **Agent prints registration failures** — aubrey not up yet (it retries),
+  wrong/revoked token, or `team_key` mismatch between token and manifest.
+- **Router never picks an agent** — agent not `active`, or your question
+  doesn't overlap its skill utterances (sparse router locally = lexical
+  matching; use words from the skill examples).
+- **Benefit/policy agent answers "could not find anything"** — ingestion
+  batch failed or grants went to a different `agent_key`; re-check the
+  ingest response counters and the `agent_key` you sent.
+- **File agent says no file was uploaded** — the upload went up without
+  `session_id`, or with a different session's id than the chat is using.
+  Re-upload with the current session id (check `stored` > 0 in the upload
+  response).
+- **LLM stream errors** — `azure_foundry` chat deployment creds missing:
+  the startup validator names the exact yaml key to fill.
+- **Token lost** — team tokens are shown once; issue a new one and restart
+  the agent with the new `AGENT_TEAM_TOKEN`.

@@ -8,6 +8,7 @@ Casbin, and only then serves:
 
     POST /capability/knowledge/retrieve   grant-scoped hybrid + 1-hop graph
     POST /capability/llm/chat/stream      SSE token stream (data: {"text"})
+    POST /capability/files/context        session-scoped uploads (file agent)
 
 No CSRF here — this plane is bearer-token, not cookies.
 """
@@ -24,10 +25,13 @@ from .....dto.capability import (
     CatalogAgentModel,
     CatalogRequest,
     CatalogResponse,
+    FilesContextRequest,
+    FilesContextResponse,
     LlmStreamRequest,
     RetrievedChunkModel,
     RetrieveRequest,
     RetrieveResponse,
+    SessionDocumentModel,
 )
 from .....entity.agents import TeamTokenEntity
 from .....llm.azure_foundry import get_ace_azure_foundry
@@ -37,6 +41,7 @@ from .....security.service_auth import (
     resolve_owned_agent,
 )
 from .....services.agents.agent_catalog_service import get_agent_catalog_service
+from .....services.documents import get_session_document_service
 from .....services.knowledge.retrieval_service import (
     RetrievalService,
     get_retrieval_service,
@@ -135,6 +140,48 @@ async def agents_catalog(
                 )
                 for a in agents
             ]
+        )
+    )
+
+
+@capability_router.post(
+    "/files/context", response_model=ApiEnvelope[FilesContextResponse]
+)
+async def files_context(
+    body: FilesContextRequest,
+    token: TeamTokenEntity = Depends(require_service_token),
+) -> ApiEnvelope[FilesContextResponse]:
+    """Documents the forwarded user uploaded into the envelope's session.
+    The session id comes from the envelope (= A2A contextId) and every
+    filter — tenant, user, session — is mandatory, so an agent can never
+    read another user's or another conversation's uploads."""
+    agent = await resolve_owned_agent(token=token, agent_key=body.agent_key)
+    await enforce_agent_access(
+        envelope=body.envelope, agent=agent, tenant_id=token.tenant_id
+    )
+    session_id = (body.envelope.session_id or "").strip()
+    if not session_id:
+        raise ValidationError(
+            "files/context needs the envelope's session_id — uploads are "
+            "session-scoped."
+        )
+    documents = await get_session_document_service().list_for_session(
+        tenant_id=token.tenant_id,
+        user_id=body.envelope.user_id,
+        session_id=session_id,
+    )
+    return ApiEnvelope(
+        data=FilesContextResponse(
+            session_id=session_id,
+            documents=[
+                SessionDocumentModel(
+                    file_name=d.file_name,
+                    sha256=d.sha256,
+                    characters=d.characters,
+                    content=d.content,
+                )
+                for d in documents
+            ],
         )
     )
 

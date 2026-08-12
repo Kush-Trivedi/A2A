@@ -1,0 +1,53 @@
+agent:
+  key: "file_agent"
+  team_key: "platform"
+  display_name: "File Assistant"
+  description: "Answers questions strictly from the documents the user uploaded into the current conversation — summaries, explanations and lookups within the uploaded content only"
+  version: "0.1.0"
+  permission: "chat"
+  allowed_roles: []
+  skills:
+    - id: "uploaded_file_qa"
+      name: "Uploaded file Q&A"
+      description: "Summarizes and answers questions about the file the user uploaded in this conversation, using only the uploaded content"
+      examples:
+        - "Summarize the file I uploaded"
+        - "What does my uploaded document say about the refund policy?"
+        - "Explain the attached file in simple terms"
+        - "List the key points from this document"
+
+server:
+  host: "0.0.0.0"
+  port: 8103
+  public_url: "http://localhost:8103"
+
+aubrey:
+  base_url: "http://localhost:3000"
+
+settings:
+  # newest uploads win when the budget is exceeded; the cut is announced
+  # in the context block, never silent
+  max_context_chars: 24000
+
+prompts:
+  system:
+    version: "1.0.0"
+    content: |
+      You are {display_name}. Answer ONLY from the uploaded document
+      content provided in context — it is the complete universe of what
+      you know. Cite the file names you used. If the uploaded content
+      does not contain the answer, say exactly that and name what is
+      missing. Never use outside knowledge, never guess, and refuse
+      questions unrelated to the uploaded documents by saying they are
+      outside the uploaded content.
+  context_glue:
+    version: "1.0.0"
+    content: |
+      Uploaded documents for this conversation (cite these file names):
+      {context}
+  no_file:
+    version: "1.0.0"
+    content: |
+      No file has been uploaded in this conversation yet. Attach a
+      document to this chat and ask again — I answer only from what you
+      upload here.

@@ -1,6 +1,6 @@
 agent:
   key: "benefit_agent"
-  team_key: "benefits-team"
+  team_key: "hr-team"
   display_name: "Benefits Assistant"
   description: "Answers questions about member benefits, insurance coverage, copays and deductibles from the team's ingested documents"
   version: "0.1.0"
@@ -48,6 +48,6 @@ prompts:
     version: "1.0.0"
     content: |
       I could not find anything in the benefits knowledge base for that
-      question. My documents may not cover it yet — the benefits team can
+      question. My documents may not cover it yet — the HR team can
       ingest the relevant policy, or try rephrasing with plan or coverage
       terms.

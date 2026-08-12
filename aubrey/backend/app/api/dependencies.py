@@ -16,10 +16,12 @@ from ..services.documents import (
     BlobSourceService,
     ConnectionService,
     FileUploadService,
+    SessionDocumentService,
     SharePointSourceService,
     get_blob_source_service,
     get_connection_service,
     get_file_upload_service,
+    get_session_document_service,
     get_sharepoint_source_service,
 )
 from ..services.chat import (
@@ -65,6 +67,9 @@ class ServiceContainer:
     def file_upload_service(self) -> FileUploadService:
         return get_file_upload_service()
 
+    def session_document_service(self) -> SessionDocumentService:
+        return get_session_document_service()
+
     def knowledge_sink_factory(self) -> KnowledgeSinkFactory:
         return get_knowledge_sink_factory()
 
@@ -88,6 +93,7 @@ provide_connection_service = container.connection_service
 provide_blob_source_service = container.blob_source_service
 provide_sharepoint_source_service = container.sharepoint_source_service
 provide_file_upload_service = container.file_upload_service
+provide_session_document_service = container.session_document_service
 provide_knowledge_sink_factory = container.knowledge_sink_factory
 provide_chat_session_service = container.chat_session_service
 provide_conversation_service = container.conversation_service

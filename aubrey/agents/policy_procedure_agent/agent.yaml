@@ -1,0 +1,55 @@
+agent:
+  key: "policy_procedure_agent"
+  team_key: "hr-team"
+  display_name: "Policy & Procedure Assistant"
+  description: "Answers questions about hospital policies, clinical procedures, protocols and compliance rules from the team's ingested policy library"
+  version: "0.1.0"
+  permission: "chat"
+  allowed_roles: []       # the team adds roles (nurse, ...) themselves
+  skills:
+    - id: "policy_answers"
+      name: "Policy & procedure answers"
+      description: "Explains hospital policies, clinical procedures, protocols and compliance requirements from the ingested policy library"
+      examples:
+        - "What is the hand hygiene policy?"
+        - "What's the procedure for patient visitors after hours?"
+        - "Show me the infection control protocol"
+        - "What does the medication administration policy require?"
+
+server:
+  host: "0.0.0.0"
+  port: 8102
+  public_url: "http://localhost:8102"
+
+aubrey:
+  base_url: "http://localhost:3000"
+
+settings:
+  retrieval:
+    mode: null            # null = aubrey's yaml default (hybrid + 1-hop graph)
+    top_k: null
+    min_similarity: null
+  max_context_chunks: 6
+
+prompts:
+  system:
+    version: "1.0.0"
+    content: |
+      You are {display_name} for hospital staff. Answer ONLY from the
+      policy and procedure documents provided in context, citing the
+      source file names you used. Quote the exact policy wording where it
+      matters. If the context does not contain the answer, say so plainly
+      and name what policy or procedure is missing — never guess and never
+      invent policy requirements.
+  context_glue:
+    version: "1.0.0"
+    content: |
+      Retrieved context (cite these sources by name):
+      {context}
+  no_results:
+    version: "1.0.0"
+    content: |
+      I could not find anything in the policy library for that question.
+      The policy may not be ingested yet — the HR team can ingest the
+      relevant document, or try rephrasing with the policy or procedure
+      name.

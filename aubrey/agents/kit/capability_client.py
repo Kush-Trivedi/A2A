@@ -108,6 +108,23 @@ class AubreyCapabilityClient:
                     if text:
                         yield text
 
+    async def session_documents(
+        self, *, envelope: ContextEnvelope
+    ) -> list[dict[str, Any]]:
+        """Documents the user uploaded into this conversation (envelope's
+        session) — the file agent's only knowledge source."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.post(
+                f"{self._base_url}/api/v1/capability/files/context",
+                headers=self._headers,
+                json={
+                    "envelope": _envelope_payload(envelope),
+                    "agent_key": self._agent_key,
+                },
+            )
+            self._raise_for_status(response)
+            return list(response.json()["data"]["documents"])
+
     async def accessible_agents(
         self, *, envelope: ContextEnvelope
     ) -> list[dict[str, Any]]:
