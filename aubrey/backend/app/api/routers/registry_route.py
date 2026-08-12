@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Request, status
 
 from ...dto.base import ApiEnvelope
-from ...dto.registry_models import (
+from ...dto.registry import (
     AgentModel,
     AgentRegistrationResponse,
     RegisterAgentRequest,

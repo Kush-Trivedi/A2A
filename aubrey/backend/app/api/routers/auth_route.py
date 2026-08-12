@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.responses import RedirectResponse
 
 from ...config.application_context import get_application_context
-from ...dto.auth_models import AuthModeResponse, MeResponse, UserProfileResponse
+from ...dto.auth import AuthModeResponse, MeResponse, UserProfileResponse
 from ...dto.base import ApiEnvelope
 from ...security.dependencies import get_current_context, get_optional_context
 from ...security.identity import (

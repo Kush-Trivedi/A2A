@@ -1,6 +1,6 @@
 from pydantic import Field
 from datetime import datetime
-from .base import StrictBaseModel
+from ..base import StrictBaseModel
 
 class AuthModeResponse(StrictBaseModel):
     environment: str
