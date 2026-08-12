@@ -5,6 +5,7 @@ from typing import Optional
 from azure.core.exceptions import AzureError, ResourceNotFoundError
 from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
+from openai import AsyncAzureOpenAI, AzureOpenAI
 
 from ..common.logger import Logger
 
@@ -56,6 +57,55 @@ class AzureKeyVaultSecretStore:
             logger.error("Key Vault secret retrieval failed: %s", secret_name)
             raise
         return secret.value or ""
+
+
+class AzureOpenAIClient:
+    """Foundry client factory: ONE base endpoint + api key, clients cached
+    per (deployment, api_version) — teams differ only by deployment name."""
+
+    def __init__(
+        self,
+        api_key: str,
+        base_endpoint: str,
+        deployment: str | None = None,
+        api_version: str | None = None,
+        timeout_seconds: float | None = None,
+    ):
+        self.api_key = api_key
+        self.base_endpoint = base_endpoint
+        self.deployment = deployment
+        self.api_version = api_version
+        self.timeout_seconds = timeout_seconds
+        self._sync_clients: dict[tuple[str | None, str | None], AzureOpenAI] = {}
+        self._async_clients: dict[tuple[str | None, str | None], AsyncAzureOpenAI] = {}
+
+    def get_client(
+        self, deployment: str | None = None, api_version: str | None = None
+    ) -> AzureOpenAI:
+        resolved_api_version = api_version or self.api_version
+        cache_key = (deployment or self.deployment, resolved_api_version)
+        if cache_key not in self._sync_clients:
+            self._sync_clients[cache_key] = AzureOpenAI(
+                api_key=self.api_key,
+                azure_endpoint=self.base_endpoint,
+                api_version=resolved_api_version,
+                timeout=self.timeout_seconds,
+            )
+        return self._sync_clients[cache_key]
+
+    def get_async_client(
+        self, deployment: str | None = None, api_version: str | None = None
+    ) -> AsyncAzureOpenAI:
+        resolved_api_version = api_version or self.api_version
+        cache_key = (deployment or self.deployment, resolved_api_version)
+        if cache_key not in self._async_clients:
+            self._async_clients[cache_key] = AsyncAzureOpenAI(
+                api_key=self.api_key,
+                azure_endpoint=self.base_endpoint,
+                api_version=resolved_api_version,
+                timeout=self.timeout_seconds,
+            )
+        return self._async_clients[cache_key]
 
 
 class AzurePostgresToken:

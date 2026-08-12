@@ -34,6 +34,18 @@ microsoft:
     refresh_token_ttl_seconds: 2592000
   azure:
     managed_identity_client_id: ""
+    azure_foundry:
+      base_endpoint: "your_base_endpoint"
+      api_key: "your_api_key"
+      timeout_seconds: 30
+      embedding:
+        deployment: "your_embedding_deployment"
+        api_version: "your_api_version"
+        embedding_dimensions: 3072
+      text_completion:
+        deployment: "your_chat_deployment"
+        api_version: "your_api_version"
+        max_tokens: 2048
     keyvault:
       keyvault_url: ""
       keyvault_secret_prefix: ""
