@@ -53,6 +53,7 @@ class ConversationService:
         question: str,
         session_id: str | None = None,
         agent_key: str | None = None,
+        message_id: str | None = None,
     ) -> AsyncIterator[tuple[str, dict]]:
         cleaned = (question or "").strip()
         if not cleaned:
@@ -65,13 +66,26 @@ class ConversationService:
         else:
             session = await self._sessions.create_session(context=context)
 
-        history = await self._sessions.list_messages(
-            context=context, session_id=session.id
-        )
-        await self._sessions.append_message(
-            context=context, session_id=session.id,
-            role=MessageRole.USER, content=cleaned,
-        )
+        messages = await self._sessions.list_messages(context=context, session_id=session.id)
+        if message_id:
+            message_index = next(
+                (i for i, m in enumerate(messages) if m.id == message_id),
+                None
+            )
+            if message_index is None:
+                raise ValidationError("Message to replay was not found")
+            user_message = messages[message_index]
+            if user_message.role != MessageRole.USER:
+                raise ValidationError("Message to replay is not a user message.")
+            if user_message.content != cleaned:
+                raise ValidationError("Message content does not match the provided question.")
+            history = messages[:message_index]
+        else:
+            history = messages
+            user_message = await self._sessions.append_message(
+                context=context, session_id=session.id,
+                role=MessageRole.USER, content=cleaned,
+            )
         sticky = await self._sessions.sticky_agent(
             tenant_id=context.tenant_id, session_id=session.id
         )
@@ -84,6 +98,7 @@ class ConversationService:
             async for event in self._dispatch(
                 context=context, session_id=session.id,
                 question=cleaned, history=history, decision=decision,
+                user_message_id=user_message.id,
             ):
                 yield event
             return
@@ -101,7 +116,7 @@ class ConversationService:
                 metadata={"kind": MessageKind.ROUTING, "disambiguation": payload},
             )
             yield "disambiguation", payload
-            yield "done", {"session_id": session.id}
+            yield "done", {"session_id": session.id, "user_message_id": user_message.id}
             return
 
         # REFUSAL_INACCESSIBLE — matched but role-blocked, or nothing routable
@@ -112,7 +127,7 @@ class ConversationService:
             metadata={"kind": MessageKind.ROUTING, "refusal": payload},
         )
         yield "refusal", payload
-        yield "done", {"session_id": session.id}
+        yield "done", {"session_id": session.id, "user_message_id": user_message.id}
 
     async def _dispatch(
         self,
@@ -122,6 +137,7 @@ class ConversationService:
         question: str,
         history: list,
         decision: RouteDecision,
+        user_message_id: str,
     ) -> AsyncIterator[tuple[str, dict]]:
         agent = decision.matched
         yield "meta", {
@@ -174,7 +190,7 @@ class ConversationService:
             role=MessageRole.ASSISTANT, content=answer,
             metadata={"kind": MessageKind.ANSWER, "agent_key": agent.agent_key},
         )
-        yield "done", {"session_id": session_id, "message_id": message.id}
+        yield "done", {"session_id": session_id,"user_message_id": user_message_id, "message_id": message.id}
 
     async def _refusal_payload(
         self, tenant_id: str, decision: RouteDecision

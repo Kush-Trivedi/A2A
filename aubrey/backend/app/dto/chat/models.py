@@ -12,6 +12,18 @@ class ChatTurnRequest(StrictBaseModel):
     question: str
     session_id: str | None = None  # omit to start a new conversation
     agent_key: str | None = None   # pin a specific agent; else the router decides
+    message_id: str | None = None  # specify the message to provide feedback for
+
+
+class EditMessageRequest(StrictBaseModel):
+    content: str
+
+class MessageFeedbackRequest(StrictBaseModel):
+    feedback: str
+
+class MessageFeedbackResponse(StrictBaseModel):
+    message_id: str
+    feedback: str
 
 
 class ChatSessionModel(StrictBaseModel):

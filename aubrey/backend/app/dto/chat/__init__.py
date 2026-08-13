@@ -3,6 +3,9 @@ from .models import (
     ChatSessionModel,
     ChatTurnRequest,
     CreateSessionRequest,
+    EditMessageRequest,
+    MessageFeedbackRequest,
+    MessageFeedbackResponse,
 )
 
 __all__ = [
@@ -10,4 +13,7 @@ __all__ = [
     "ChatSessionModel",
     "ChatTurnRequest",
     "CreateSessionRequest",
+    "EditMessageRequest",
+    "MessageFeedbackRequest",
+    "MessageFeedbackResponse",
 ]

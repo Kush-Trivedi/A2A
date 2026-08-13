@@ -12,6 +12,9 @@ from .....dto.chat import (
     ChatSessionModel,
     ChatTurnRequest,
     CreateSessionRequest,
+    EditMessageRequest,
+    MessageFeedbackRequest,
+    MessageFeedbackResponse,
 )
 from .....entity.chat import ChatMessageEntity, ChatSessionEntity
 from .....security.authorization import require_permission
@@ -41,7 +44,12 @@ def _to_session(entity: ChatSessionEntity) -> ChatSessionModel:
     )
 
 
-def _to_message(entity: ChatMessageEntity) -> ChatMessageModel:
+def _to_message(
+        entity: ChatMessageEntity,
+        *,
+        feedback: str | None = None,
+        edited: bool = False,
+    ) -> ChatMessageModel:
     return ChatMessageModel(
         id=entity.id,
         session_id=entity.session_id,
@@ -49,6 +57,8 @@ def _to_message(entity: ChatMessageEntity) -> ChatMessageModel:
         content=entity.content,
         metadata=dict(entity.message_metadata or {}),
         created_at=entity.created_at,
+        feedback=feedback,
+        edited=edited,
     )
 
 
@@ -71,6 +81,7 @@ async def chat_stream(
                 question=body.question,
                 session_id=body.session_id,
                 agent_key=body.agent_key,
+                message_id=body.message_id,
             ):
                 yield _sse(event, payload)
         except AppError as exc:  # stream already started — surface, never mask
@@ -120,7 +131,63 @@ async def list_messages(
     service: ChatSessionService = Depends(provide_chat_session_service),
 ) -> ApiEnvelope[list[ChatMessageModel]]:
     messages = await service.list_messages(context=context, session_id=session_id)
-    return ApiEnvelope(data=[_to_message(m) for m in messages])
+    feedback = await service.feedback_by_message_ids(context=context, session_id=session_id)
+    edited_ids = await service.edited_by_message_ids(context=context, session_id=session_id)
+
+    return ApiEnvelope(
+        data=[
+            _to_message(
+                m,
+                feedback=feedback.get(m.id),
+                edited=m.id in edited_ids,
+            )
+            for m in messages
+        ]
+    )
+
+
+@chat_router.post(
+    "/sessions/{session_id}/messages/{message_id}/edit",
+    response_model=ApiEnvelope[ChatMessageModel],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_csrf), Depends(require_permission(_CHAT_OBJ, "POST"))],
+)
+async def edit_message(
+    session_id: str,
+    message_id: str,
+    body: EditMessageRequest,
+    context: SessionContext = Depends(get_current_context),
+    service: ChatSessionService = Depends(provide_chat_session_service),
+) -> ApiEnvelope[ChatMessageModel]:
+    message = await service.edit_user_message(
+        context=context,
+        session_id=session_id,
+        message_id=message_id,
+        new_content=body.content,
+    )
+    return ApiEnvelope(data=_to_message(message, edited=True), message="Message edited.")
+
+
+@chat_router.post(
+    "/sessions/{session_id}/messages/{message_id}/feedback",
+    response_model=ApiEnvelope[ChatMessageModel],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_csrf), Depends(require_permission(_CHAT_OBJ, "POST"))],
+)
+async def set_message_feedback(
+    session_id: str,
+    message_id: str,
+    body: MessageFeedbackRequest,
+    context: SessionContext = Depends(get_current_context),
+    service: ChatSessionService = Depends(provide_chat_session_service),
+) -> ApiEnvelope[ChatMessageModel]:
+    feedback = await service.feedback_user_message(
+        context=context,
+        session_id=session_id,
+        message_id=message_id,
+        feedback=body.feedback,
+    )
+    return ApiEnvelope(data=MessageFeedbackResponse(message_id=message_id, feedback=feedback), message="Feedback submitted.")
 
 
 @chat_router.delete(

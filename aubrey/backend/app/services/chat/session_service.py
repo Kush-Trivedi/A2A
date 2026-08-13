@@ -11,7 +11,11 @@ from datetime import datetime, timezone
 from sqlmodel import select
 
 from ...database.rdbms.pg_session import get_postgres_connector
-from ...entity.chat import ChatMessageEntity, ChatSessionEntity, MessageKind, MessageRole
+from ...entity.chat import (
+    ChatMessageEntity, ChatSessionEntity, 
+    MessageEditChainEntity, MessageEditVersionEntity, MessageFeedbackEntity,
+    MessageKind, MessageRole
+)
 from ...security.session import SessionContext
 from ...utils.common.logger import Logger
 from ...utils.errors import DatabaseError, NotFoundError, ValidationError
@@ -19,6 +23,8 @@ from ...utils.errors import DatabaseError, NotFoundError, ValidationError
 logger = Logger(__name__).get_logger()
 
 _TITLE_MAX_CHARS = 36
+_FEEDBACK_VALUES = {"angry", "sad", "neutral", "happy", "very_happy"}
+_FEEDBACK_MAX_CHARS = 2_000
 
 
 def _title_from(text: str) -> str:
@@ -164,6 +170,159 @@ class ChatSessionService:
         await self.get_owned_session(context=context, session_id=session_id)
         return await self._messages(context.tenant_id, session_id)
 
+    async def feedback_by_message(
+        self, *, context: SessionContext, sesssion_id: str
+    ) -> dict[str, str]:
+        try:
+            async with self._db.session() as session:
+                rows = (
+                    await session.exec(
+                        select(MessageFeedbackEntity)
+                        .where(
+                            MessageFeedbackEntity.tenant_id == context.tenant_id,
+                            MessageFeedbackEntity.session_id == sesssion_id,
+                            MessageFeedbackEntity.actor_id == context.actor_id,
+                            MessageFeedbackEntity.deleted_at.is_(None)
+                        )
+                    )
+                ).all()
+                return {row.message_id: row.value for row in rows}
+        except Exception as exc:
+            raise DatabaseError(cause=exc) from exc
+
+
+    async def edited_message_ids(
+        self, *, context: SessionContext, session_id: str
+    ) -> set[str]:
+        try:
+            async with self._db.session() as session:
+                rows = (
+                    await session.exec(
+                        select(MessageEditChainEntity.id)
+                        .where(
+                            MessageEditChainEntity.session_id == session_id,
+                            MessageEditChainEntity.tenant_id == context.tenant_id,
+                        )
+                    )
+                ).all()
+                return {row for row in rows}
+        except Exception as exc:
+            raise DatabaseError(cause=exc) from exc
+
+    async def set_message_feedback(
+        self, *, context: SessionContext, session_id: str, message_id: str, feedback: str
+    ) -> str |None:
+        message = await self._owned_message(
+            context=context,
+            session_id=session_id,
+            message_id=message_id,
+        )
+        if message.role != MessageRole.ASSISTANT:
+            raise ValidationError("Only assistant messages can have feedback.")
+
+        value = (feedback or "").strip()
+        if value and value not in _FEEDBACK_VALUES and len(value) > _FEEDBACK_MAX_CHARS:
+            raise ValidationError(f"Feedback must be one of {_FEEDBACK_VALUES} or at most {_FEEDBACK_MAX_CHARS} characters.")
+        try:
+            async with self._db.session() as session:
+                record = (
+                    await session.exec(
+                        select(MessageFeedbackEntity).where(
+                            MessageFeedbackEntity.message_id == message_id,
+                            MessageFeedbackEntity.actor_id == context.actor_id,
+                        )
+                    )
+                ).first()
+                if not value:
+                    if record is not None:
+                        record.deleted_at = datetime.now(timezone.utc)
+                        session.add(record)
+                    return None
+                if record is None:
+                    record = MessageFeedbackEntity(
+                        id=uuid.uuid4().hex,
+                        message_id=message_id,
+                        session_id=session_id,
+                        tenant_id=context.tenant_id,
+                        actor_id=context.actor_id,
+                        feedback=value,
+                    )
+                else:
+                    record.feedback = value
+                    record.deleted_at = None
+                session.add(record)
+                return value
+        except ValidationError:
+            raise
+        except Exception as exc:
+            raise DatabaseError(cause=exc) from exc
+
+
+    async def edit_user_message(
+        self, *, context: SessionContext, session_id: str, message_id: str, content: str
+    ) -> ChatMessageEntity:
+        value = content.strip()
+        if not value:
+            raise ValidationError("Content cannot be empty.")
+        message = await self._owned_message(
+            context=context,
+            session_id=session_id,
+            message_id=message_id,
+        )
+        if message.role != MessageRole.USER:
+            raise ValidationError("Only user messages can be edited.")
+
+        if message.content == value:
+            return message
+
+        try:
+            async with self._db.session() as session:
+                editable = await session.get(ChatMessageEntity, message.id)
+                if editable is None:
+                    raise ValidationError("Message not found.")
+                chain = (
+                    await session.exec(
+                        select(MessageEditChainEntity).where(
+                            MessageEditChainEntity.message_id == message.id
+                        )
+                    )
+                ).first()
+                if chain is None:
+                    chain = MessageEditChainEntity(
+                        id=uuid.uuid4().hex,
+                        message_id=message.id,
+                        session_id=session_id,
+                        tenant_id=context.tenant_id,
+                        actor_id=context.actor_id,
+                    )
+                    session.add(chain)
+                    version_number = 1
+                else:
+                    versions = (
+                        await session.exec(
+                            select(MessageEditVersionEntity).where(
+                                MessageEditVersionEntity.chain_id == chain.id
+                            )
+                        )
+                    ).all()
+                    version_number = len(versions) + 1
+                session.add(
+                    MessageEditVersionEntity(
+                        id=uuid.uuid4().hex,
+                        chain_id=chain.id,
+                        version_number=version_number,
+                        content=editable.content,
+                    )
+                )
+                editable.content = value
+                editable.updated_at = datetime.now(tz=timezone.utc)
+                session.add(editable)
+                return editable
+        except ValidationError:
+            raise
+        except Exception as exc:
+            raise DatabaseError(cause=exc) from exc
+
     async def _messages(
         self, tenant_id: str, session_id: str
     ) -> list[ChatMessageEntity]:
@@ -182,6 +341,30 @@ class ChatSessionService:
                 return list(rows)
         except Exception as exc:
             raise DatabaseError(cause=exc) from exc
+
+
+    async def _owned_message(
+        self, *, context:SessionContext, session_id: str, message_id: str
+    ) -> ChatMessageEntity:
+        await self.get_owned_session(content=context, session_id=session_id)
+
+        try:
+            async with self._db.session() as session:
+                message = (
+                    await session.exec(
+                        select(ChatMessageEntity).where(
+                            ChatMessageEntity.id == message_id,
+                            ChatMessageEntity.session_id == session_id,
+                            ChatMessageEntity.tenant_id == context.tenant_id,
+                            ChatMessageEntity.user_id == context.user_id,
+                        )
+                    )
+                ).first()
+        except Exception as exc:
+            raise DatabaseError(cause=exc) from exc
+        if message is None:
+            raise NotFoundError(f"Message with ID {message_id} not found")
+        return message
 
     async def sticky_agent(self, *, tenant_id: str, session_id: str) -> str | None:
         """The agent that answered last — follow-ups prefer it. Only ANSWER
