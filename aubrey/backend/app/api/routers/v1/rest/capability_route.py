@@ -26,6 +26,7 @@ from .....dto.capability import (
     CatalogRequest,
     CatalogResponse,
     DataAnswerModel,
+    DataAskRequest,
     DataGenieRequest,
     DataSqlRequest,
     FilesContextRequest,
@@ -45,7 +46,7 @@ from .....security.service_auth import (
 )
 from .....entity.documents import ConnectionType
 from .....services.agents.agent_catalog_service import get_agent_catalog_service
-from .....services.data import DataAnswer, get_data_query_service
+from .....services.data import DataAnswer, get_data_query_service, get_text2sql_service
 from .....services.documents import get_session_document_service
 from .....services.knowledge.retrieval_service import (
     RetrievalService,
@@ -155,7 +156,33 @@ def _to_data_answer(answer: DataAnswer) -> DataAnswerModel:
         columns=list(answer.columns), rows=[list(r) for r in answer.rows],
         row_count=answer.row_count, truncated=answer.truncated,
         warnings=list(answer.warnings),
+        answerable=answer.answerable, reason=answer.reason,
     )
+
+
+@capability_router.post("/data/ask", response_model=ApiEnvelope[DataAnswerModel])
+async def data_ask(
+    body: DataAskRequest,
+    token: TeamTokenEntity = Depends(require_service_token),
+) -> ApiEnvelope[DataAnswerModel]:
+    """The fast lane: our LLM writes the SQL (schema auto-introspected,
+    team examples few-shot), the statement API executes it. Graceful in
+    every branch — unanswerable questions return {answerable: false,
+    reason} instead of failing."""
+    agent = await resolve_owned_agent(token=token, agent_key=body.agent_key)
+    await enforce_agent_access(
+        envelope=body.envelope, agent=agent, tenant_id=token.tenant_id
+    )
+    service = get_data_query_service()
+    connection = await service.resolve_connection(
+        tenant_id=token.tenant_id, team_key=token.team_key,
+        connection_key=body.connection_key,
+        expected_type=ConnectionType.DATABRICKS_SQL,
+    )
+    answer = await get_text2sql_service().ask(
+        connection=connection, question=body.question, examples=body.examples
+    )
+    return ApiEnvelope(data=_to_data_answer(answer))
 
 
 @capability_router.post("/data/genie", response_model=ApiEnvelope[DataAnswerModel])

@@ -28,7 +28,10 @@ capabilities = AubreyCapabilityClient(
 )
 
 _data = dict(config.settings.get("data") or {})
+_mode = str(_data.get("mode") or "genie").strip().lower()
+_sql_connection = str(_data.get("sql_connection") or "")
 _genie_connection = str(_data.get("genie_connection") or "")
+_examples = [dict(e) for e in (_data.get("examples") or [])]
 _max_table_rows = int(config.settings.get("max_table_rows") or 20)
 
 
@@ -50,9 +53,20 @@ async def answer_stream(
             "No context envelope received — this agent is called through "
             "aubrey's chat plane, which always sends one."
         )
-    result = await capabilities.data_genie(
-        envelope=envelope, connection_key=_genie_connection, question=question
-    )
+    if _mode == "ask":
+        result = await capabilities.data_ask(
+            envelope=envelope, connection_key=_sql_connection,
+            question=question, examples=_examples,
+        )
+    else:
+        result = await capabilities.data_genie(
+            envelope=envelope, connection_key=_genie_connection, question=question
+        )
+    if not result.get("answerable", True):
+        yield prompts.render(
+            "not_answerable", reason=str(result.get("reason") or "")
+        ) or ""
+        return
     rows = list(result.get("rows") or [])
     genie_text = str(result.get("text") or "")
     if not rows and not genie_text:

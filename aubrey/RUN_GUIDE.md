@@ -377,6 +377,21 @@ team-token auth; a connection must belong to the calling team. Operational
 knobs in yaml `databricks.data`: poll backoff (1s→5s), `max_wait_seconds`
 (90), `statement_wait_timeout` (50s sync), `max_result_rows` (100).
 
+**The fast lane — `POST /capability/data/ask` (text-to-SQL, ~5-8s):**
+both data agents now default to `mode: "ask"` in their manifests: aubrey
+introspects the connection's schema via `information_schema` (cached,
+TTL 600s — column COMMENTs in Databricks directly improve accuracy),
+your own LLM writes ONE SELECT statement guided by the manifest's
+few-shot `examples`, and the statement API executes it. Unanswerable
+questions come back as `{answerable: false, reason}` → the manifest's
+`not_answerable` prompt answers conversationally — never a hard failure.
+Guards: single SELECT/WITH only (DML/DDL rejected), one repair attempt on
+SQL errors, row caps; keep the workspace PAT read-only. This lane works
+against `hive_metastore` TODAY (no UC migration needed) and costs your
+already-metered LLM tokens instead of the shared Genie DBU allowance.
+Flip any agent back with `mode: "genie"`. Prompt template + knobs:
+yaml `databricks.data.text2sql`.
+
 **Second data agent — the pattern repeated:** `contract_negotiation_agent`
 (port 8112, team `supply-chain`) answers natural-language questions over
 the supply chain team's contract data in Unity Catalog. Onboarding is
