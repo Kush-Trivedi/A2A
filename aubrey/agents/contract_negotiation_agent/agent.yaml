@@ -1,0 +1,53 @@
+agent:
+  key: "contract_negotiation_agent"
+  team_key: "supply-chain"
+  display_name: "Contract Negotiations Assistant"
+  description: "Answers questions live from the supply chain team's contract data in Unity Catalog — vendors, terms, spend, renewals and negotiation history"
+  version: "0.1.0"
+  permission: "chat"
+  allowed_roles: ["developer"]
+  skills:
+    - id: "contract_answers"
+      name: "Live contract data answers"
+      description: "Answers analytical questions against the team's contract and vendor data via Genie: spend, expirations, terms, supplier breakdowns, negotiation outcomes"
+      examples:
+        - "Which vendor contracts expire this quarter?"
+        - "Show contract spend by supplier this year"
+        - "What are the payment terms for our top five vendors?"
+        - "List active contracts above 500k"
+
+server:
+  host: "0.0.0.0"
+  port: 8112
+  public_url: "http://localhost:8112"
+
+aubrey:
+  base_url: "http://localhost:3000"
+
+settings:
+  data:
+    genie_connection: "contracts-genie"   # the team's registered connection_key
+  max_table_rows: 20
+
+prompts:
+  system:
+    version: "1.0.0"
+    content: |
+      You are {display_name}. You answer using live contract data results
+      provided in context ONLY — never invent numbers, vendors, dates or
+      terms. Present the direct answer first, concisely; mention the row
+      count when a table is included. If the data does not contain what
+      was asked, say so plainly and name what is missing.
+  data_context:
+    version: "1.0.0"
+    content: |
+      Live data result (generated SQL and rows from Databricks):
+      SQL: {sql}
+      Rows ({row_count}{truncated_note}):
+      {table}
+  no_data:
+    version: "1.0.0"
+    content: |
+      The contract data returned no rows for that question. Try rephrasing
+      with the vendor name, contract id or time range — or the data may
+      not be in this team's space yet.

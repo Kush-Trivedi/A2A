@@ -377,6 +377,16 @@ team-token auth; a connection must belong to the calling team. Operational
 knobs in yaml `databricks.data`: poll backoff (1s→5s), `max_wait_seconds`
 (90), `statement_wait_timeout` (50s sync), `max_result_rows` (100).
 
+**Second data agent — the pattern repeated:** `contract_negotiation_agent`
+(port 8112, team `supply-chain`) answers natural-language questions over
+the supply chain team's contract data in Unity Catalog. Onboarding is
+identical and fully independent of gda: register team `supply-chain` +
+token → register its Genie connection (`connection_key: "contracts-genie"`,
+`source_type: "genie"`, config `{workspace, space_id}` for a space built
+on the contracts tables) → start the agent with the supply-chain token →
+activate. Every new data domain is this same recipe: team + space +
+connection + manifest — zero platform code.
+
 ## Troubleshooting
 
 - **403 on admin/chat endpoints** — CSRF missing/stale: re-run
