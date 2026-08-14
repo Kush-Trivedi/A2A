@@ -25,6 +25,9 @@ class SmsSettings:
     max_length: int              # outbound body cap (characters)
     window_tokens: int           # memory window budget for SMS threads
     status_callbacks_enabled: bool
+    rate_limit_per_minute: int   # inbound LLM dispatches per phone per minute
+    media_reply: str             # reply when an MMS/media message arrives ("" = no reply)
+    outreach_instruction: str    # turn text template for outreach sends ({context})
 
     @property
     def sender_configured(self) -> bool:
@@ -68,4 +71,10 @@ def get_sms_settings() -> SmsSettings:
         max_length=int(sms.get("max_length") or 480),
         window_tokens=int(sms.get("window_tokens") or 600),
         status_callbacks_enabled=bool(sms.get("status_callbacks_enabled", True)),
+        rate_limit_per_minute=int(sms.get("rate_limit_per_minute") or 6),
+        media_reply=str(sms.get("media_reply") or ""),
+        outreach_instruction=str(
+            sms.get("outreach_instruction")
+            or "Compose the outreach SMS for this recipient.\nRecipient context:\n{context}"
+        ),
     )

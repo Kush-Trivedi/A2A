@@ -40,9 +40,17 @@ class SmsMessageEntity(TimestampModel, table=True):
     error_explanation: str = Field(
         default="", sa_column=Column(Text, nullable=False, default="")
     )
+    # full ErrorMessage text from the status callback, when Twilio sends one
+    error_message: str = Field(default="", sa_column=Column(Text, nullable=False, default=""))
     num_segments: int | None = Field(default=None)
+    num_media: int = Field(default=0)
     # STOP | HELP | START — set when the inbound was a compliance keyword
     opt_out_type: str = Field(default="", sa_column=Column(Text, nullable=False, default=""))
+    # raw webhook details worth keeping (SmsStatus, To/FromCountry, AccountSid, ...)
+    vendor_details: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    )
     # append-only: [{status, error_code, at}]
     status_history: list[Any] = Field(
         default_factory=list,

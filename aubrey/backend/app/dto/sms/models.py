@@ -72,7 +72,10 @@ class SmsMessageModel(StrictBaseModel):
     status: str
     error_code: str
     error_explanation: str
+    error_message: str
     num_segments: int | None
+    num_media: int
     opt_out_type: str
     status_history: list[Any]
+    vendor_details: dict[str, Any]
     created_at: datetime

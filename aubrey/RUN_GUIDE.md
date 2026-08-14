@@ -313,10 +313,20 @@ Setup:
    `GET /api/v1/admin/sms/consent/{phone}` shows the full consent history.
 
 Replies on a `bidirectional` campaign flow: webhook → signature check →
-idempotency (Twilio retries can't double-reply) → keyword gate → thread
-(phone+campaign = one chat session, channel "sms", same memory window) →
-agent over A2A → capped reply via REST. The webhook itself always returns
-empty TwiML immediately; the LLM turn runs in the background.
+idempotency (Twilio retries can't double-reply) → keyword gate (local
+keywords AND Twilio's forwarded `OptOutType`, both honored) → media gate
+(MMS gets the yaml-owned `media_reply`, attachments aren't processed) →
+**per-phone rate limit**
+(`rate_limit_per_minute`, default 6 — floods are stored, not dispatched)
+→ thread (phone+campaign = one chat session, channel "sms", same memory
+window) → agent over A2A → capped reply via REST. The webhook itself
+always returns empty TwiML immediately; the LLM turn runs in the
+background. Inbound rows also keep the raw webhook details
+(SmsStatus, To/FromCountry, AccountSid) in `vendor_details`.
+
+The Twilio integration itself lives in `backend/app/utils/telephony/`
+(generic client: send, fetch_message for callback backfill, signature
+validation); `services/sms/twilio_gateway.py` binds it to the yaml.
 
 PHI note: the example agent's prompt forbids diagnoses, results and
 medication names in message bodies (SMS is not a secure channel) — keep

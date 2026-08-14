@@ -30,11 +30,12 @@ from ..a2a.a2a_client_service import get_a2a_client_service
 from ..a2a.context_envelope import ContextEnvelope
 from ..chat.memory_window import get_memory_window_builder
 from ..chat.session_service import get_chat_session_service
+from ...utils.telephony import SmsSendError
 from .campaign_service import get_sms_campaign_service
 from .consent_service import KeywordKind, classify_keyword, get_sms_consent_service
 from .message_log_service import get_sms_message_log_service
 from .sms_settings import get_sms_settings
-from .twilio_client import SmsSendError, get_twilio_rest_client
+from .twilio_gateway import get_twilio_rest_client
 
 logger = Logger(__name__).get_logger()
 
@@ -164,12 +165,13 @@ class SmsChannelService:
         await self._touch_thread(thread.id, outbound=True)
         return result
 
-    @staticmethod
-    def _outreach_text(context_vars: dict) -> str:
+    def _outreach_text(self, context_vars: dict) -> str:
+        """The turn text sent to the campaign agent for an outreach send —
+        the instruction template is yaml-owned (twilio.sms
+        .outreach_instruction, {context} placeholder), never Python."""
         lines = "\n".join(f"{k}: {v}" for k, v in context_vars.items())
-        return (
-            "Compose the outreach SMS for this recipient.\n"
-            f"Recipient context:\n{lines if lines else '(none provided)'}"
+        return self._settings.outreach_instruction.replace(
+            "{context}", lines if lines else "(none provided)"
         )
 
     # ------------------------------------------------------------------ #
@@ -177,17 +179,37 @@ class SmsChannelService:
     # ------------------------------------------------------------------ #
 
     async def handle_inbound_fast(
-        self, *, phone: str, body: str, twilio_sid: str
+        self,
+        *,
+        phone: str,
+        body: str,
+        twilio_sid: str,
+        opt_out_type: str = "",
+        num_media: int = 0,
+        vendor_details: dict | None = None,
     ) -> InboundOutcome:
         """The synchronous half — everything compliance-critical happens
         HERE, before Twilio gets its 200: idempotency, opt-out/opt-in/help
-        recording, thread resolution. The LLM turn is deferred."""
+        recording, emergency escalation, thread resolution. The LLM turn
+        is deferred."""
         tenant_id = self._settings.tenant_id
+        phone = self._normalize_phone(phone)
+        details = dict(vendor_details or {})
 
         if await self._ledger.inbound_exists(twilio_sid=twilio_sid):
             return InboundOutcome(handled="duplicate")
 
+        # Twilio's OptOutType (Messaging Services) is authoritative — honor
+        # it even when the body wording wouldn't match our keyword sets.
         keyword = classify_keyword(body)
+        forwarded = (opt_out_type or "").strip().upper()
+        if forwarded == "STOP":
+            keyword = KeywordKind.OPT_OUT
+        elif forwarded == "START":
+            keyword = KeywordKind.OPT_IN
+        elif forwarded == "HELP" and keyword is None:
+            keyword = KeywordKind.HELP
+
         if keyword == KeywordKind.OPT_OUT:
             await self._consent.record_opt_out(
                 tenant_id=tenant_id, phone=phone, source="keyword",
@@ -215,6 +237,27 @@ class SmsChannelService:
                 twilio_sid=twilio_sid, opt_out_type="HELP",
             )
             return InboundOutcome(handled="help")
+
+        # Media (MMS) — we don't process attachments; say so honestly.
+        if num_media > 0 and not (body or "").strip():
+            await self._ledger.record_inbound(
+                tenant_id=tenant_id, phone=phone, body="[media message]",
+                twilio_sid=twilio_sid, num_media=num_media, vendor_details=details,
+            )
+            if self._settings.media_reply and await self._consent.can_send(
+                tenant_id=tenant_id, phone=phone
+            ):
+                await self._deliver(
+                    tenant_id=tenant_id, phone=phone, body=self._settings.media_reply,
+                    campaign_key="", agent_key="", session_id="",
+                )
+            return InboundOutcome(handled="stored", detail="media_not_supported")
+
+        # Per-phone rate limit — SMS loops and abuse never reach the LLM.
+        recent = await self._ledger.count_recent_inbound(
+            tenant_id=tenant_id, phone=phone, seconds=60
+        )
+        rate_limited = recent >= self._settings.rate_limit_per_minute
 
         thread = await self._latest_thread(tenant_id=tenant_id, phone=phone)
         if thread is None:
@@ -247,7 +290,7 @@ class SmsChannelService:
         await self._ledger.record_inbound(
             tenant_id=tenant_id, phone=phone, body=body, twilio_sid=twilio_sid,
             campaign_key=campaign.key, agent_key=thread.agent_key,
-            session_id=thread.session_id,
+            session_id=thread.session_id, num_media=num_media, vendor_details=details,
         )
         await self._sessions.append_message(
             context=context, session_id=thread.session_id,
@@ -264,6 +307,13 @@ class SmsChannelService:
             await self._consent.status_for(tenant_id=tenant_id, phone=phone)
         ) == ConsentStatus.OPTED_OUT:
             return InboundOutcome(handled="stored", detail="sender is opted out")
+
+        if rate_limited:
+            logger.warning(
+                "Inbound SMS rate-limited — stored, not dispatched",
+                extra={"phone_suffix": phone[-4:], "recent_in_60s": recent},
+            )
+            return InboundOutcome(handled="stored", detail="rate_limited")
 
         return InboundOutcome(
             handled="replied", background=True,
@@ -352,10 +402,15 @@ class SmsChannelService:
         logger.warning("SMS body capped", extra={"cap": cap, "original_chars": len(body)})
         return cut
 
+    @staticmethod
+    def _normalize_phone(phone: str) -> str:
+        return "".join((phone or "").split())
+
     async def _deliver(
         self, *, tenant_id: str, phone: str, body: str,
         campaign_key: str, agent_key: str, session_id: str,
     ) -> OutreachOutcome:
+        self._settings.require_configured()
         # Consent is re-checked at the moment of send — a STOP that arrived
         # while the LLM was generating still wins.
         if not await self._consent.can_send(tenant_id=tenant_id, phone=phone):

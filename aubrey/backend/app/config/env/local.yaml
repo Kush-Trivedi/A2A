@@ -137,3 +137,8 @@ twilio:
     max_length: 480
     window_tokens: 600
     status_callbacks_enabled: true
+    rate_limit_per_minute: 6
+    media_reply: "Sorry, this number can't receive pictures or attachments - please send your question as text."
+    outreach_instruction: "Compose the outreach SMS for this recipient.
+Recipient context:
+{context}"

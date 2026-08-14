@@ -90,10 +90,25 @@ async def sms_inbound(request: Request) -> Response:
     if not phone or not twilio_sid:
         return PlainTextResponse("bad request", status_code=status.HTTP_400_BAD_REQUEST)
 
+    def _safe_int(value: str | None) -> int:
+        try:
+            return int(value or 0)
+        except ValueError:
+            return 0
+
     service = get_sms_channel_service()
     try:
         outcome = await service.handle_inbound_fast(
-            phone=phone, body=body, twilio_sid=twilio_sid
+            phone=phone, body=body, twilio_sid=twilio_sid,
+            opt_out_type=params.get("OptOutType", ""),
+            num_media=_safe_int(params.get("NumMedia")),
+            vendor_details={
+                "sms_status": params.get("SmsStatus", ""),
+                "to_country": params.get("ToCountry", ""),
+                "from_country": params.get("FromCountry", ""),
+                "account_sid": params.get("AccountSid", ""),
+                "to_number": params.get("To", ""),
+            },
         )
         if outcome.background and outcome.followup is not None:
             task = asyncio.create_task(service.run_inbound_followup(outcome.followup))
@@ -112,12 +127,16 @@ async def sms_status(request: Request) -> Response:
         return PlainTextResponse("forbidden", status_code=status.HTTP_403_FORBIDDEN)
 
     twilio_sid = params.get("MessageSid", "").strip()
-    message_status = params.get("MessageStatus", "").strip()
+    message_status = (
+        params.get("MessageStatus", "") or params.get("SmsStatus", "")
+    ).strip()
     error_code = params.get("ErrorCode", "").strip()  # present only on failures
+    error_message = params.get("ErrorMessage", "").strip()
     if twilio_sid and message_status:
         try:
             await get_sms_message_log_service().apply_status_callback(
-                twilio_sid=twilio_sid, status=message_status, error_code=error_code
+                twilio_sid=twilio_sid, status=message_status,
+                error_code=error_code, error_message=error_message,
             )
         except Exception:  # noqa: BLE001 — never bounce a callback
             logger.error("SMS status callback handling failed", exc_info=True)
@@ -153,8 +172,11 @@ def _to_message(entity: SmsMessageEntity) -> SmsMessageModel:
         session_id=entity.session_id, twilio_sid=entity.twilio_sid,
         body=entity.body, status=entity.status, error_code=entity.error_code,
         error_explanation=entity.error_explanation,
-        num_segments=entity.num_segments, opt_out_type=entity.opt_out_type,
+        error_message=entity.error_message,
+        num_segments=entity.num_segments, num_media=entity.num_media,
+        opt_out_type=entity.opt_out_type,
         status_history=list(entity.status_history or []),
+        vendor_details=dict(entity.vendor_details or {}),
         created_at=entity.created_at,
     )
 

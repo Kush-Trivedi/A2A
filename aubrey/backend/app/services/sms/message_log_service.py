@@ -14,7 +14,7 @@ from ...database.rdbms.pg_session import get_postgres_connector
 from ...entity.sms import SmsDirection, SmsMessageEntity
 from ...utils.common.logger import Logger
 from ...utils.errors import DatabaseError
-from .twilio_client import explain_error_code
+from ...utils.telephony import explain_error_code
 
 logger = Logger(__name__).get_logger()
 
@@ -52,12 +52,15 @@ class SmsMessageLogService:
         agent_key: str = "",
         session_id: str = "",
         opt_out_type: str = "",
+        num_media: int = 0,
+        vendor_details: dict | None = None,
     ) -> SmsMessageEntity:
         return await self._record(
             tenant_id=tenant_id, phone=phone, direction=SmsDirection.INBOUND,
             body=body, twilio_sid=twilio_sid, status="received",
             campaign_key=campaign_key, agent_key=agent_key,
             session_id=session_id, opt_out_type=opt_out_type,
+            num_media=num_media, vendor_details=vendor_details,
         )
 
     async def record_outbound(
@@ -82,7 +85,7 @@ class SmsMessageLogService:
         )
 
     async def apply_status_callback(
-        self, *, twilio_sid: str, status: str, error_code: str = ""
+        self, *, twilio_sid: str, status: str, error_code: str = "", error_message: str = ""
     ) -> bool:
         """Update from a Twilio status callback. Appends to history and
         keeps the latest status; unknown sids are logged, never an error —
@@ -108,12 +111,39 @@ class SmsMessageLogService:
                 if error_code:
                     message.error_code = str(error_code)
                     message.error_explanation = explain_error_code(error_code)
+                if error_message:
+                    message.error_message = error_message
                 message.status_history = list(message.status_history or []) + [
-                    {"status": status, "error_code": str(error_code or ""), "at": now.isoformat()}
+                    {"status": status, "error_code": str(error_code or ""),
+                     "error_message": error_message, "at": now.isoformat()}
                 ]
                 message.updated_at = now
                 session.add(message)
                 return True
+        except Exception as exc:
+            raise DatabaseError(cause=exc) from exc
+
+    async def count_recent_inbound(
+        self, *, tenant_id: str, phone: str, seconds: int
+    ) -> int:
+        """Inbound volume from one phone in the recent window — the input
+        to per-phone rate limiting (SMS loops, abuse)."""
+        from datetime import timedelta
+
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=seconds)
+        try:
+            async with self._db.session() as session:
+                rows = (
+                    await session.exec(
+                        select(SmsMessageEntity.id).where(
+                            SmsMessageEntity.tenant_id == tenant_id,
+                            SmsMessageEntity.phone == phone,
+                            SmsMessageEntity.direction == SmsDirection.INBOUND,
+                            SmsMessageEntity.created_at >= cutoff,  # type: ignore[arg-type]
+                        )
+                    )
+                ).all()
+                return len(rows)
         except Exception as exc:
             raise DatabaseError(cause=exc) from exc
 
@@ -158,6 +188,8 @@ class SmsMessageLogService:
         num_segments: int | None = None,
         error_code: str = "",
         opt_out_type: str = "",
+        num_media: int = 0,
+        vendor_details: dict | None = None,
     ) -> SmsMessageEntity:
         now = datetime.now(timezone.utc)
         try:
@@ -176,6 +208,8 @@ class SmsMessageLogService:
                     error_code=str(error_code or ""),
                     error_explanation=explain_error_code(error_code),
                     num_segments=num_segments,
+                    num_media=num_media,
+                    vendor_details=dict(vendor_details or {}),
                     opt_out_type=opt_out_type,
                     status_history=[
                         {"status": status, "error_code": str(error_code or ""), "at": now.isoformat()}

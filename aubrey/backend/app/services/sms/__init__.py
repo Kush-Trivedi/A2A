@@ -17,12 +17,12 @@ from .sms_channel_service import (
     get_sms_channel_service,
 )
 from .sms_settings import SmsSettings, get_sms_settings
-from .twilio_client import (
+from .twilio_gateway import get_twilio_rest_client
+from ...utils.telephony import (
     TWILIO_ERROR_CODES,
     SmsSendError,
     TwilioRestClient,
     explain_error_code,
-    get_twilio_rest_client,
 )
 
 __all__ = [
