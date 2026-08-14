@@ -10,6 +10,8 @@ from backend.app.entity.base_models import TimestampModel
 class ConnectionType:
     BLOB = "blob"
     SHAREPOINT = "sharepoint"
+    GENIE = "genie"                    # Databricks AI/BI Genie space
+    DATABRICKS_SQL = "databricks_sql"  # direct warehouse SQL (fast lane)
 
 
 class ConnectionEntity(TimestampModel, table=True):

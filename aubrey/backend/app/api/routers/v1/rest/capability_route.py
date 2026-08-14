@@ -25,6 +25,9 @@ from .....dto.capability import (
     CatalogAgentModel,
     CatalogRequest,
     CatalogResponse,
+    DataAnswerModel,
+    DataGenieRequest,
+    DataSqlRequest,
     FilesContextRequest,
     FilesContextResponse,
     LlmStreamRequest,
@@ -40,7 +43,9 @@ from .....security.service_auth import (
     require_service_token,
     resolve_owned_agent,
 )
+from .....entity.documents import ConnectionType
 from .....services.agents.agent_catalog_service import get_agent_catalog_service
+from .....services.data import DataAnswer, get_data_query_service
 from .....services.documents import get_session_document_service
 from .....services.knowledge.retrieval_service import (
     RetrievalService,
@@ -142,6 +147,60 @@ async def agents_catalog(
             ]
         )
     )
+
+
+def _to_data_answer(answer: DataAnswer) -> DataAnswerModel:
+    return DataAnswerModel(
+        text=answer.text, sql=answer.sql,
+        columns=list(answer.columns), rows=[list(r) for r in answer.rows],
+        row_count=answer.row_count, truncated=answer.truncated,
+        warnings=list(answer.warnings),
+    )
+
+
+@capability_router.post("/data/genie", response_model=ApiEnvelope[DataAnswerModel])
+async def data_genie(
+    body: DataGenieRequest,
+    token: TeamTokenEntity = Depends(require_service_token),
+) -> ApiEnvelope[DataAnswerModel]:
+    """Natural-language answer from the team's Genie space. The connection
+    must belong to the token's team — a team can never query another
+    team's warehouse."""
+    agent = await resolve_owned_agent(token=token, agent_key=body.agent_key)
+    await enforce_agent_access(
+        envelope=body.envelope, agent=agent, tenant_id=token.tenant_id
+    )
+    service = get_data_query_service()
+    connection = await service.resolve_connection(
+        tenant_id=token.tenant_id, team_key=token.team_key,
+        connection_key=body.connection_key, expected_type=ConnectionType.GENIE,
+    )
+    answer = await service.ask_genie(
+        tenant_id=token.tenant_id,
+        session_id=body.envelope.session_id or "",
+        connection=connection,
+        question=body.question,
+    )
+    return ApiEnvelope(data=_to_data_answer(answer))
+
+
+@capability_router.post("/data/sql", response_model=ApiEnvelope[DataAnswerModel])
+async def data_sql(
+    body: DataSqlRequest,
+    token: TeamTokenEntity = Depends(require_service_token),
+) -> ApiEnvelope[DataAnswerModel]:
+    agent = await resolve_owned_agent(token=token, agent_key=body.agent_key)
+    await enforce_agent_access(
+        envelope=body.envelope, agent=agent, tenant_id=token.tenant_id
+    )
+    service = get_data_query_service()
+    connection = await service.resolve_connection(
+        tenant_id=token.tenant_id, team_key=token.team_key,
+        connection_key=body.connection_key,
+        expected_type=ConnectionType.DATABRICKS_SQL,
+    )
+    answer = await service.execute_sql(connection=connection, statement=body.statement)
+    return ApiEnvelope(data=_to_data_answer(answer))
 
 
 @capability_router.post(

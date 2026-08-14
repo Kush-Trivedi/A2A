@@ -48,6 +48,8 @@ class ApplicationContext:
         # Channel infra (platform-owned inbound number) — absent yaml section
         # means the SMS channel is simply not configured, never a crash.
         self.twilio = content.get("twilio") or {}
+        # Data plane (platform-held workspace credentials) — same tolerance.
+        self.databricks = content.get("databricks") or {}
         logger.info("Configuration loaded for environment: %s", self.environment)
 
     def _value_with_overrides(
@@ -175,6 +177,14 @@ class ApplicationContext:
     @twilio.setter
     def twilio(self, variables: Dict[str, Any]) -> None:
         self._twilio = self._resolve_section("AUBREY_TWILIO", variables)
+
+    @property
+    def databricks(self) -> Dict[str, Any]:
+        return self._databricks
+
+    @databricks.setter
+    def databricks(self, variables: Dict[str, Any]) -> None:
+        self._databricks = self._resolve_section("AUBREY_DATABRICKS", variables)
 
 
 @lru_cache(maxsize=1)

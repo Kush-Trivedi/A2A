@@ -25,6 +25,10 @@ _REQUIRED_CONFIG = {
     # The SharePoint host is tenant-wide and lives in the env yaml
     # (microsoft.sharepoint.hostname) — teams only differ by site + drive.
     ConnectionType.SHAREPOINT: ("site_path", "drive_name"),
+    # Databricks: `workspace` names a key in the yaml databricks.workspaces
+    # map (host+PAT are platform-held); the space/warehouse is team-owned.
+    ConnectionType.GENIE: ("workspace", "space_id"),
+    ConnectionType.DATABRICKS_SQL: ("workspace", "warehouse_id"),
 }
 
 

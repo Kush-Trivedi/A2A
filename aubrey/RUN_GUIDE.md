@@ -332,6 +332,51 @@ PHI note: the example agent's prompt forbids diagnoses, results and
 medication names in message bodies (SMS is not a secure channel) — keep
 that rule in every campaign manifest.
 
+## Databricks data plane (Genie + direct SQL)
+
+Natural-language questions over Unity Catalog data, per team, with zero
+hardcoding: the platform yaml holds workspace credentials
+(`databricks.workspaces.<key>.{host,token}`, PAT in every env); WHICH
+space/warehouse a query touches is a **team connection**.
+
+1. Fill `databricks.workspaces.primary` in the env yaml. **Use a
+   serverless SQL warehouse for the Genie space** — 2-6s start vs ~4 min
+   classic cold start; that cold start is what makes answers take minutes.
+2. Register the team's connections (`POST /api/v1/admin/connections`):
+
+   ```json
+   {"team_key": "data-analytics", "connection_key": "gda-genie",
+    "source_type": "genie",
+    "config": {"workspace": "primary", "space_id": "<genie space id>"}}
+   ```
+   ```json
+   {"team_key": "data-analytics", "connection_key": "gda-sql",
+    "source_type": "databricks_sql",
+    "config": {"workspace": "primary", "warehouse_id": "<id>",
+               "catalog": "main", "schema": "claims"}}
+   ```
+   A team can register as many as it needs (multiple warehouses/catalogs
+   = multiple connections; the agent manifest picks its default).
+3. Start + activate `gda_agent` (port 8111, team `data-analytics` — register
+   the team + token first; the manifest's `settings.data.genie_connection`
+   names the connection it queries).
+4. Ask from the UI: "How many claims were denied last month?" → routed to
+   gda_agent → `/capability/data/genie` (conversation continuity is
+   platform-managed per chat session, so follow-ups like "break that down
+   by payer" stay in the same Genie thread) → streamed grounded answer
+   with the generated SQL and a result table.
+5. Draft appeals: same agent, same LLM endpoint — "Generate a draft appeal
+   for claim CLM-10023", or the dashboard pins `agent_key: "gda_agent"`
+   and sends the selected row's identifiers as the question. The manifest's
+   `draft_appeal` prompt owns the letter structure; missing fields come
+   back as [MISSING], never fabricated.
+
+Capability surface: `POST /capability/data/genie` {connection_key,
+question} and `POST /capability/data/sql` {connection_key, statement} —
+team-token auth; a connection must belong to the calling team. Operational
+knobs in yaml `databricks.data`: poll backoff (1s→5s), `max_wait_seconds`
+(90), `statement_wait_timeout` (50s sync), `max_result_rows` (100).
+
 ## Troubleshooting
 
 - **403 on admin/chat endpoints** — CSRF missing/stale: re-run

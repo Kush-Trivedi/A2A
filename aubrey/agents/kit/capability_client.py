@@ -108,6 +108,43 @@ class AubreyCapabilityClient:
                     if text:
                         yield text
 
+    async def data_genie(
+        self, *, envelope: ContextEnvelope, connection_key: str, question: str
+    ) -> dict[str, Any]:
+        """Natural-language answer from the team's Genie connection —
+        {text, sql, columns, rows, row_count, truncated, warnings}."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.post(
+                f"{self._base_url}/api/v1/capability/data/genie",
+                headers=self._headers,
+                json={
+                    "envelope": _envelope_payload(envelope),
+                    "agent_key": self._agent_key,
+                    "connection_key": connection_key,
+                    "question": question,
+                },
+            )
+            self._raise_for_status(response)
+            return dict(response.json()["data"])
+
+    async def data_sql(
+        self, *, envelope: ContextEnvelope, connection_key: str, statement: str
+    ) -> dict[str, Any]:
+        """Direct SQL on the team's warehouse connection — the fast lane."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.post(
+                f"{self._base_url}/api/v1/capability/data/sql",
+                headers=self._headers,
+                json={
+                    "envelope": _envelope_payload(envelope),
+                    "agent_key": self._agent_key,
+                    "connection_key": connection_key,
+                    "statement": statement,
+                },
+            )
+            self._raise_for_status(response)
+            return dict(response.json()["data"])
+
     async def session_documents(
         self, *, envelope: ContextEnvelope
     ) -> list[dict[str, Any]]:

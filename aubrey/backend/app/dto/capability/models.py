@@ -1,3 +1,5 @@
+from typing import Any
+
 from ..base import StrictBaseModel
 
 
@@ -56,6 +58,37 @@ class LlmStreamRequest(StrictBaseModel):
 class CatalogRequest(StrictBaseModel):
     envelope: ContextEnvelopeModel
     agent_key: str
+
+
+class DataGenieRequest(StrictBaseModel):
+    """Natural-language question against a team-owned Genie connection.
+    Conversation continuity is platform-managed per chat session — agents
+    never track Genie conversation ids."""
+
+    envelope: ContextEnvelopeModel
+    agent_key: str
+    connection_key: str
+    question: str
+
+
+class DataSqlRequest(StrictBaseModel):
+    """Direct SQL on a team-owned warehouse connection — the fast lane for
+    known lookups (dashboard row fetch, cached statements)."""
+
+    envelope: ContextEnvelopeModel
+    agent_key: str
+    connection_key: str
+    statement: str
+
+
+class DataAnswerModel(StrictBaseModel):
+    text: str
+    sql: str
+    columns: list[str]
+    rows: list[list[Any]]
+    row_count: int
+    truncated: bool
+    warnings: list[str]
 
 
 class FilesContextRequest(StrictBaseModel):

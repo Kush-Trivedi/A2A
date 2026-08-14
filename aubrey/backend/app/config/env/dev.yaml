@@ -142,3 +142,20 @@ twilio:
     outreach_instruction: "Compose the outreach SMS for this recipient.
 Recipient context:
 {context}"
+
+# Databricks data plane. Workspace credentials are platform-held (PAT in
+# every env — standing decision); WHICH space/warehouse a query uses is
+# team-owned via /admin/connections (source_type genie | databricks_sql,
+# config.workspace names a key below). Serverless warehouses strongly
+# recommended: 2-6s start vs ~4 min classic cold start.
+databricks:
+  workspaces:
+    primary:
+      host: "your_databricks_host"
+      token: "your_databricks_pat"
+  data:
+    poll_initial_seconds: 1.0
+    poll_max_seconds: 5.0
+    max_wait_seconds: 90
+    statement_wait_timeout: "50s"
+    max_result_rows: 100
