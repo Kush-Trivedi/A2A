@@ -5,7 +5,7 @@ agent:
   description: "Answers questions about hospital policies, clinical procedures, protocols and compliance rules from the team's ingested policy library"
   version: "0.1.0"
   permission: "chat"
-  allowed_roles: []       # the team adds roles (nurse, ...) themselves
+  allowed_roles: ["developer"]       # the team adds roles (nurse, ...) themselves
   skills:
     - id: "policy_answers"
       name: "Policy & procedure answers"

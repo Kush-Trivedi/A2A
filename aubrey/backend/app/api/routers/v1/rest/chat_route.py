@@ -17,7 +17,6 @@ from .....dto.chat import (
     MessageFeedbackResponse,
 )
 from .....entity.chat import ChatMessageEntity, ChatSessionEntity
-from .....security.authorization import require_permission
 from .....security.dependencies import get_current_context, require_csrf
 from .....security.session import SessionContext
 from .....services.chat import ChatSessionService, ConversationService
@@ -64,7 +63,7 @@ def _to_message(
 
 @chat_router.post(
     "/stream",
-    dependencies=[Depends(require_csrf), Depends(require_permission(_CHAT_OBJ, "POST"))],
+    dependencies=[Depends(require_csrf)],
 )
 async def chat_stream(
     body: ChatTurnRequest,
@@ -96,7 +95,7 @@ async def chat_stream(
     "/sessions",
     response_model=ApiEnvelope[ChatSessionModel],
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_csrf), Depends(require_permission(_CHAT_OBJ, "POST"))],
+    dependencies=[Depends(require_csrf)],
 )
 async def create_session(
     body: CreateSessionRequest,
@@ -110,7 +109,6 @@ async def create_session(
 @chat_router.get(
     "/sessions",
     response_model=ApiEnvelope[list[ChatSessionModel]],
-    dependencies=[Depends(require_permission(_CHAT_OBJ, "GET"))],
 )
 async def list_sessions(
     context: SessionContext = Depends(get_current_context),
@@ -123,7 +121,6 @@ async def list_sessions(
 @chat_router.get(
     "/sessions/{session_id}/messages",
     response_model=ApiEnvelope[list[ChatMessageModel]],
-    dependencies=[Depends(require_permission(_CHAT_OBJ, "GET"))],
 )
 async def list_messages(
     session_id: str,
@@ -150,7 +147,7 @@ async def list_messages(
     "/sessions/{session_id}/messages/{message_id}/edit",
     response_model=ApiEnvelope[ChatMessageModel],
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_csrf), Depends(require_permission(_CHAT_OBJ, "POST"))],
+    dependencies=[Depends(require_csrf)],
 )
 async def edit_message(
     session_id: str,
@@ -172,7 +169,7 @@ async def edit_message(
     "/sessions/{session_id}/messages/{message_id}/feedback",
     response_model=ApiEnvelope[ChatMessageModel],
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_csrf), Depends(require_permission(_CHAT_OBJ, "POST"))],
+    dependencies=[Depends(require_csrf)],
 )
 async def set_message_feedback(
     session_id: str,
@@ -193,7 +190,7 @@ async def set_message_feedback(
 @chat_router.delete(
     "/sessions/{session_id}",
     response_model=MessageResponse,
-    dependencies=[Depends(require_csrf), Depends(require_permission(_CHAT_OBJ, "DELETE"))],
+    dependencies=[Depends(require_csrf)],
 )
 async def archive_session(
     session_id: str,

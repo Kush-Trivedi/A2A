@@ -45,6 +45,9 @@ class ApplicationContext:
         self.authorization = content["authorization"]
         self.knowledge = content["knowledge"]
         self.agents = content["agents"]
+        # Channel infra (platform-owned inbound number) — absent yaml section
+        # means the SMS channel is simply not configured, never a crash.
+        self.twilio = content.get("twilio") or {}
         logger.info("Configuration loaded for environment: %s", self.environment)
 
     def _value_with_overrides(
@@ -164,6 +167,14 @@ class ApplicationContext:
     @agents.setter
     def agents(self, variables: Dict[str, Any]) -> None:
         self._agents = self._resolve_section("AUBREY_AGENTS", variables)
+
+    @property
+    def twilio(self) -> Dict[str, Any]:
+        return self._twilio
+
+    @twilio.setter
+    def twilio(self, variables: Dict[str, Any]) -> None:
+        self._twilio = self._resolve_section("AUBREY_TWILIO", variables)
 
 
 @lru_cache(maxsize=1)

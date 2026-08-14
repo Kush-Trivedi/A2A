@@ -1,0 +1,197 @@
+"""The SMS ledger — every message in or out with its full Twilio
+lifecycle. Status callbacks append to `status_history` (never overwrite),
+error codes get their human explanation attached, and inbound records are
+idempotent on MessageSid so a Twilio webhook retry can never double-reply
+(the legacy platform had that bug — the duplicate was caught only AFTER
+the reply had been sent)."""
+
+import uuid
+from datetime import datetime, timezone
+
+from sqlmodel import select
+
+from ...database.rdbms.pg_session import get_postgres_connector
+from ...entity.sms import SmsDirection, SmsMessageEntity
+from ...utils.common.logger import Logger
+from ...utils.errors import DatabaseError
+from .twilio_client import explain_error_code
+
+logger = Logger(__name__).get_logger()
+
+
+class SmsMessageLogService:
+    def __init__(self) -> None:
+        self._db = get_postgres_connector()
+
+    async def inbound_exists(self, *, twilio_sid: str) -> bool:
+        """Idempotency check — MUST run before any processing/reply."""
+        if not twilio_sid:
+            return False
+        try:
+            async with self._db.session() as session:
+                row = (
+                    await session.exec(
+                        select(SmsMessageEntity.id).where(
+                            SmsMessageEntity.twilio_sid == twilio_sid,
+                            SmsMessageEntity.direction == SmsDirection.INBOUND,
+                        )
+                    )
+                ).first()
+                return row is not None
+        except Exception as exc:
+            raise DatabaseError(cause=exc) from exc
+
+    async def record_inbound(
+        self,
+        *,
+        tenant_id: str,
+        phone: str,
+        body: str,
+        twilio_sid: str,
+        campaign_key: str = "",
+        agent_key: str = "",
+        session_id: str = "",
+        opt_out_type: str = "",
+    ) -> SmsMessageEntity:
+        return await self._record(
+            tenant_id=tenant_id, phone=phone, direction=SmsDirection.INBOUND,
+            body=body, twilio_sid=twilio_sid, status="received",
+            campaign_key=campaign_key, agent_key=agent_key,
+            session_id=session_id, opt_out_type=opt_out_type,
+        )
+
+    async def record_outbound(
+        self,
+        *,
+        tenant_id: str,
+        phone: str,
+        body: str,
+        twilio_sid: str,
+        status: str,
+        campaign_key: str = "",
+        agent_key: str = "",
+        session_id: str = "",
+        num_segments: int | None = None,
+        error_code: str = "",
+    ) -> SmsMessageEntity:
+        return await self._record(
+            tenant_id=tenant_id, phone=phone, direction=SmsDirection.OUTBOUND,
+            body=body, twilio_sid=twilio_sid, status=status,
+            campaign_key=campaign_key, agent_key=agent_key,
+            session_id=session_id, num_segments=num_segments, error_code=error_code,
+        )
+
+    async def apply_status_callback(
+        self, *, twilio_sid: str, status: str, error_code: str = ""
+    ) -> bool:
+        """Update from a Twilio status callback. Appends to history and
+        keeps the latest status; unknown sids are logged, never an error —
+        Twilio must always get a 2xx."""
+        now = datetime.now(timezone.utc)
+        try:
+            async with self._db.session() as session:
+                message = (
+                    await session.exec(
+                        select(SmsMessageEntity).where(
+                            SmsMessageEntity.twilio_sid == twilio_sid,
+                            SmsMessageEntity.direction == SmsDirection.OUTBOUND,
+                        )
+                    )
+                ).first()
+                if message is None:
+                    logger.warning(
+                        "Status callback for unknown message sid",
+                        extra={"twilio_sid": twilio_sid, "status": status},
+                    )
+                    return False
+                message.status = status
+                if error_code:
+                    message.error_code = str(error_code)
+                    message.error_explanation = explain_error_code(error_code)
+                message.status_history = list(message.status_history or []) + [
+                    {"status": status, "error_code": str(error_code or ""), "at": now.isoformat()}
+                ]
+                message.updated_at = now
+                session.add(message)
+                return True
+        except Exception as exc:
+            raise DatabaseError(cause=exc) from exc
+
+    async def list_messages(
+        self,
+        *,
+        tenant_id: str,
+        phone: str | None = None,
+        campaign_key: str | None = None,
+        limit: int = 100,
+    ) -> list[SmsMessageEntity]:
+        try:
+            async with self._db.session() as session:
+                statement = select(SmsMessageEntity).where(
+                    SmsMessageEntity.tenant_id == tenant_id
+                )
+                if phone:
+                    statement = statement.where(SmsMessageEntity.phone == phone.strip())
+                if campaign_key:
+                    statement = statement.where(
+                        SmsMessageEntity.campaign_key == campaign_key.strip().lower()
+                    )
+                statement = statement.order_by(
+                    SmsMessageEntity.created_at.desc()  # type: ignore[attr-defined]
+                ).limit(max(1, min(limit, 500)))
+                return list((await session.exec(statement)).all())
+        except Exception as exc:
+            raise DatabaseError(cause=exc) from exc
+
+    async def _record(
+        self,
+        *,
+        tenant_id: str,
+        phone: str,
+        direction: str,
+        body: str,
+        twilio_sid: str,
+        status: str,
+        campaign_key: str = "",
+        agent_key: str = "",
+        session_id: str = "",
+        num_segments: int | None = None,
+        error_code: str = "",
+        opt_out_type: str = "",
+    ) -> SmsMessageEntity:
+        now = datetime.now(timezone.utc)
+        try:
+            async with self._db.session() as session:
+                message = SmsMessageEntity(
+                    id=uuid.uuid4().hex,
+                    tenant_id=tenant_id,
+                    phone=phone,
+                    direction=direction,
+                    campaign_key=campaign_key,
+                    agent_key=agent_key,
+                    session_id=session_id,
+                    twilio_sid=twilio_sid,
+                    body=body,
+                    status=status,
+                    error_code=str(error_code or ""),
+                    error_explanation=explain_error_code(error_code),
+                    num_segments=num_segments,
+                    opt_out_type=opt_out_type,
+                    status_history=[
+                        {"status": status, "error_code": str(error_code or ""), "at": now.isoformat()}
+                    ],
+                )
+                session.add(message)
+                return message
+        except Exception as exc:
+            raise DatabaseError(cause=exc) from exc
+
+
+_service: SmsMessageLogService | None = None
+
+
+def get_sms_message_log_service() -> SmsMessageLogService:
+    global _service
+    if _service is None:
+        _service = SmsMessageLogService()
+    return _service

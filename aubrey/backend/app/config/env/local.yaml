@@ -118,3 +118,22 @@ agents:
     overlap_threshold: 0.86
     fallback_agent: "general"
     utterance_cap: 32
+
+# Platform SMS channel (Twilio). The inbound number is channel infra and
+# platform-owned; campaigns bind it to team agents. sms.default_campaign
+# handles cold inbound texts ("" = store only, never dispatch).
+twilio:
+  account_sid: "your_twilio_account_sid"
+  auth_token: "your_twilio_auth_token"
+  phone_number: "your_twilio_phone_number"
+  messaging_service_sid: ""
+  webhook_base_url: ""
+  validate_signatures: true
+  timeout_seconds: 15
+  tenant_id: "default"   # MUST match your Entra tenant id (what /auth/me shows) or campaigns will not resolve
+  sms:
+    user_role: "sms_user"
+    default_campaign: ""
+    max_length: 480
+    window_tokens: 600
+    status_callbacks_enabled: true

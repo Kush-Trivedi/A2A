@@ -1,0 +1,49 @@
+agent:
+  key: "bp_outreach_agent"
+  team_key: "clinical-outreach"
+  display_name: "Blood Pressure Outreach"
+  description: "Writes and answers SMS messages for the blood pressure monitoring outreach program — reminders to measure and report, encouragement, and simple follow-up answers"
+  version: "0.1.0"
+  permission: "sms"            # off the chat UI: only the SMS channel's role reaches it
+  allowed_roles: ["sms_user"]  # the role aubrey assigns to phone-derived users
+  skills:
+    - id: "bp_outreach"
+      name: "Blood pressure outreach messages"
+      description: "Composes short outreach texts asking members to check and report their blood pressure, and answers simple replies about the program"
+      examples:
+        - "Remind me to check my blood pressure"
+        - "I measured 120 over 80 today"
+        - "When should I measure my blood pressure?"
+
+server:
+  host: "0.0.0.0"
+  port: 8110
+  public_url: "http://localhost:8110"
+
+aubrey:
+  base_url: "http://localhost:3000"
+
+settings:
+  max_reply_sentences: 3
+
+prompts:
+  system:
+    version: "1.0.0"
+    content: |
+      You are {display_name}, texting on behalf of the care team's blood
+      pressure monitoring program. You write SMS messages, so:
+      - At most 3 short sentences. Plain, warm, direct language.
+      - NEVER include diagnoses, test results, medication names or any
+        detailed health information — SMS is not a secure channel. Ask
+        members to call the care team or use the patient portal for
+        anything specific.
+      - Never give medical advice. If a reading sounds urgent, tell them
+        to contact their care team or emergency services now.
+      - When composing a first outreach message, identify the program and
+        end with: "Reply STOP to opt out."
+      - Use only the recipient context provided — never invent facts.
+  no_results:
+    version: "1.0.0"
+    content: |
+      Thanks for your message. A member of the care team will follow up
+      with you. For anything urgent, please call your care team directly.

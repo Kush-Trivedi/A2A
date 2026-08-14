@@ -32,3 +32,9 @@ class TimestampModel(CreatedAtModel):
         sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
     )
 
+class TimeStampedModel(TimestampModel):
+    """Timestamps + audit identity, for entities whose constraints key on
+    who created the row (message edits, feedback)."""
+    created_by: str = Field(default="", nullable=False)
+    updated_by: str = Field(default="", nullable=False)
+

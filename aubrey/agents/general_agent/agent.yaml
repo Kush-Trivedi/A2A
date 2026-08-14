@@ -4,7 +4,7 @@ agent:
   display_name: "General Assistant"
   description: "Explains which assistants and capabilities the signed-in user can access, based on their roles"
   version: "0.1.0"
-  permission: ""          # open — the router's fallback must serve everyone
+  permission: "chat"
   allowed_roles: []
   skills:
     - id: "access-overview"

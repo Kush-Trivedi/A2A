@@ -265,6 +265,63 @@ Upload test without the UI (add the form field to Swagger's form, or):
 curl.exe http://localhost:3000/api/v1/files/upload -H "X-CSRF-Token: <csrf_token>" -H "Cookie: aubrey_session=<cookie value>" -F "file=@C:\path\to\document.pdf" -F "session_id=<session id>"
 ```
 
+## SMS channel (Twilio)
+
+The platform owns the Twilio number and all telephony; teams just register
+a prompt-driven **campaign agent** (blood pressure outreach, payment
+reminders, ...) and bind it to a campaign. Two campaign modes:
+`outreach` (we send; replies are stored for the record, never answered)
+and `bidirectional` (replies continue the conversation with the agent).
+
+**Consent is the first gate, always.** No recorded opt-in → no outbound,
+ever (TCPA: the burden of proving consent is on the sender). STOP /
+STOPALL / UNSUBSCRIBE / CANCEL / END / QUIT / REVOKE / OPTOUT are honored
+before anything else touches an inbound message; START / UNSTOP / YES
+opt back in; HELP is recorded. Twilio's own filtering also auto-blocks and
+auto-replies to these — aubrey records the transition and enforces it on
+every future send (and a send rejected with error 21610 syncs the ledger).
+
+Setup:
+
+1. Fill `twilio:` in the env yaml — `account_sid`, `auth_token`,
+   `phone_number` (or `messaging_service_sid`), and **`tenant_id` must be
+   your Entra tenant id** (what `/auth/me` shows) or campaigns registered
+   in Swagger won't resolve. `webhook_base_url` = the public https base
+   Twilio calls (ngrok locally), used for both webhook config and
+   signature validation.
+2. In the Twilio console, point the number's inbound webhook to
+   `<webhook_base_url>/api/v1/sms/webhooks/inbound` (POST). Status
+   callbacks are requested per message automatically.
+3. Start the campaign agent (same kit pattern — it self-registers):
+   `$env:AGENT_TEAM_TOKEN = "<its team token>"; uv run python -m bp_outreach_agent.app.main`
+   (port 8110, `permission: "sms"`, `allowed_roles: ["sms_user"]` — off
+   the chat UI by the same Casbin rule that puts other agents on it).
+   Activate it in Swagger.
+4. Register the campaign: `POST /api/v1/admin/sms/campaigns`
+   `{"key": "bp-outreach", "agent_key": "bp_outreach_agent", "mode": "bidirectional", "description": "..."}`
+5. Record consent (from your signed intake form / portal checkbox):
+   `POST /api/v1/admin/sms/consent`
+   `{"phone": "+15551234567", "status": "opted_in", "note": "intake form #123"}`
+6. Send outreach: `POST /api/v1/admin/sms/outreach`
+   `{"campaign_key": "bp-outreach", "recipients": [{"phone": "+15551234567", "context": {"first_name": "Sam", "last_reading_days_ago": "14"}}]}`
+   The agent's manifest prompt writes the message from those facts; the
+   platform caps length (`twilio.sms.max_length`), sends, and records.
+7. Audit everything: `GET /api/v1/admin/sms/messages?phone=+1...` shows
+   each message's status journey (queued → sent → delivered/undelivered/
+   failed) with error codes explained (30003 unreachable, 30007 carrier
+   filtered, 30034 A2P 10DLC unregistered, ...), and
+   `GET /api/v1/admin/sms/consent/{phone}` shows the full consent history.
+
+Replies on a `bidirectional` campaign flow: webhook → signature check →
+idempotency (Twilio retries can't double-reply) → keyword gate → thread
+(phone+campaign = one chat session, channel "sms", same memory window) →
+agent over A2A → capped reply via REST. The webhook itself always returns
+empty TwiML immediately; the LLM turn runs in the background.
+
+PHI note: the example agent's prompt forbids diagnoses, results and
+medication names in message bodies (SMS is not a secure channel) — keep
+that rule in every campaign manifest.
+
 ## Troubleshooting
 
 - **403 on admin/chat endpoints** — CSRF missing/stale: re-run

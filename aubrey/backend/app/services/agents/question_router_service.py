@@ -115,10 +115,7 @@ class QuestionRouterService:
                         agent_key=pinned.agent_key, matched=pinned,
                         candidates=tuple(candidates),
                     )
-                return RouteDecision(
-                    action=RouteAction.REFUSAL_INACCESSIBLE, mode=mode,
-                    matched=pinned, candidates=tuple(candidates),
-                )
+                return await self._fallback(context, mode, denied_candidates=pinned)
 
         if not candidates:
             return await self._fallback(context, mode)
@@ -146,13 +143,9 @@ class QuestionRouterService:
                     )
 
         if top.score < threshold:
-            return await self._fallback(context, mode, candidates)
-
+            return await self._fallback(context, mode, candidates=candidates, denied_candidates=top)
         if not await self._permitted(context, top):
-            return RouteDecision(
-                action=RouteAction.REFUSAL_INACCESSIBLE, mode=mode,
-                matched=top, candidates=tuple(candidates),
-            )
+            return await self._fallback(context, mode, candidates=candidates, denied_candidates=top)
 
         if len(candidates) > 1:
             runner_up = candidates[1]
@@ -252,11 +245,22 @@ class QuestionRouterService:
         context: SessionContext,
         mode: str,
         candidates: list[RouteCandidate] | None = None,
+        denied_candidates: RouteCandidate | None = None,
     ) -> RouteDecision:
-        fallback = await self._candidate_for(
-            context.tenant_id, self._settings.fallback_agent
-        )
+        fallback = None
+        if self._settings.fallback_agent:
+            fallback = await self._candidate_for(
+                context.tenant_id, self._settings.fallback_agent
+            )
         if fallback is not None and await self._permitted(context, fallback):
+            return RouteDecision(
+                action=RouteAction.FALLBACK, mode=mode,
+                agent_key=fallback.agent_key, matched=fallback,
+                candidates=tuple(candidates or ()),
+            )
+
+        fallback = await self._public_candidate(context.tenant_id)
+        if fallback is not None:
             return RouteDecision(
                 action=RouteAction.FALLBACK, mode=mode,
                 agent_key=fallback.agent_key, matched=fallback,
@@ -264,8 +268,39 @@ class QuestionRouterService:
             )
         return RouteDecision(
             action=RouteAction.REFUSAL_INACCESSIBLE, mode=mode,
+            matched=denied_candidates,
             candidates=tuple(candidates or ()),
         )
+
+    async def _public_candidate(self, tenant_id: str) -> RouteCandidate | None:
+        statement = sql_text(
+            """
+            SELECT  a.agent_key, a.display_name, a.permission,
+                    COALESCE(a.card_url, '') AS card_url, t.key AS team_key
+            FROM registered_agents AS a JOIN odt_teams AS t ON a.team_id = t.id
+            WHERE a.tenant_id = :tenant_id AND a.status = 'active'
+                AND COALESCE(a.permission, '') = ''
+                AND COALESCE(a.card_url, '') <> ''
+            ORDER BY a.created_at, a.agent_key
+            LIMIT 1
+            """
+        )
+        try:
+            async with self._db.session() as session:
+                row = (await session.execute(statement, {"tenant_id": tenant_id})).mappings().first()
+        except Exception as exc:
+            raise DatabaseError(cause=exc) from exc
+        if row is None:
+            return None
+        return RouteCandidate(
+            agent_key=row["agent_key"],
+            display_name=row["display_name"],
+            team_key=row["team_key"],
+            permission="",
+            card_url=row["card_url"],
+            score=0.0,
+        )
+
 
 
 _service: QuestionRouterService | None = None
