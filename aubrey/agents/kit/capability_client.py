@@ -127,32 +127,6 @@ class AubreyCapabilityClient:
             self._raise_for_status(response)
             return dict(response.json()["data"])
 
-    async def data_ask(
-        self,
-        *,
-        envelope: ContextEnvelope,
-        connection_key: str,
-        question: str,
-        examples: list[dict[str, str]] | None = None,
-    ) -> dict[str, Any]:
-        """Fast text-to-SQL over the team's warehouse connection. Returns
-        {answerable, reason, sql, columns, rows, ...} — check `answerable`
-        before narrating rows."""
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(
-                f"{self._base_url}/api/v1/capability/data/ask",
-                headers=self._headers,
-                json={
-                    "envelope": _envelope_payload(envelope),
-                    "agent_key": self._agent_key,
-                    "connection_key": connection_key,
-                    "question": question,
-                    "examples": list(examples or []),
-                },
-            )
-            self._raise_for_status(response)
-            return dict(response.json()["data"])
-
     async def data_sql(
         self, *, envelope: ContextEnvelope, connection_key: str, statement: str
     ) -> dict[str, Any]:

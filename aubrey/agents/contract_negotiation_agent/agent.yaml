@@ -26,12 +26,7 @@ aubrey:
 
 settings:
   data:
-    mode: "ask"                          # ask = fast text-to-SQL | genie
-    sql_connection: "contracts-sql"      # databricks_sql connection (ask mode)
-    genie_connection: "contracts-genie"  # genie connection (genie mode)
-    examples:                            # few-shot Q→SQL, the accuracy lever
-      - question: "Which vendor contracts expire this quarter?"
-        sql: "SELECT vendor_name, contract_id, end_date FROM contracts WHERE end_date BETWEEN date_trunc('quarter', current_date()) AND last_day(add_months(date_trunc('quarter', current_date()), 2)) ORDER BY end_date"
+    genie_connection: "contracts-genie"   # the team's registered connection_key
   max_table_rows: 20
 
 prompts:
@@ -56,9 +51,3 @@ prompts:
       The contract data returned no rows for that question. Try rephrasing
       with the vendor name, contract id or time range — or the data may
       not be in this team's space yet.
-  not_answerable:
-    version: "1.0.0"
-    content: |
-      That question can't be answered from the contract data I have
-      ({reason}). I can help with contract spend, expirations, terms and
-      supplier breakdowns.

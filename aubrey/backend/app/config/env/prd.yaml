@@ -159,16 +159,3 @@ databricks:
     max_wait_seconds: 90
     statement_wait_timeout: "50s"
     max_result_rows: 100
-    text2sql:
-      schema_cache_ttl_seconds: 600
-      repair_attempts: 1
-      max_output_tokens: 800
-      prompt_template: "You translate questions into a single Databricks SQL SELECT statement over the tables below. Use ONLY these tables and columns.
-
-Schema:
-{schema}
-
-Examples:
-{examples}
-
-Rules: return ONLY the SQL statement, no explanation, no markdown. If the question cannot be answered from these tables, return exactly: NO_QUERY: <one short reason>."

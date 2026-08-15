@@ -64,8 +64,6 @@ class DataAnswer:
     row_count: int = 0
     truncated: bool = False
     warnings: tuple[str, ...] = field(default_factory=tuple)
-    answerable: bool = True             # False = graceful "not from this data"
-    reason: str = ""                    # why, when answerable is False
 
 
 class DataQueryService:

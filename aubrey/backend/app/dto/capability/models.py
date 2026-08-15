@@ -81,17 +81,6 @@ class DataSqlRequest(StrictBaseModel):
     statement: str
 
 
-class DataAskRequest(StrictBaseModel):
-    """Fast text-to-SQL lane: our LLM writes the SQL from the introspected
-    schema + the team's few-shot examples (manifest-owned, passed here)."""
-
-    envelope: ContextEnvelopeModel
-    agent_key: str
-    connection_key: str
-    question: str
-    examples: list[dict[str, str]] = []  # [{question, sql}]
-
-
 class DataAnswerModel(StrictBaseModel):
     text: str
     sql: str
@@ -100,8 +89,6 @@ class DataAnswerModel(StrictBaseModel):
     row_count: int
     truncated: bool
     warnings: list[str]
-    answerable: bool = True
-    reason: str = ""
 
 
 class FilesContextRequest(StrictBaseModel):

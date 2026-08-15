@@ -32,10 +32,7 @@ aubrey:
 
 settings:
   data:
-    mode: "ask"                     # ask = fast text-to-SQL | genie
-    sql_connection: "gda-sql"       # databricks_sql connection (ask mode)
-    genie_connection: "gda-genie"   # genie connection (genie mode)
-    examples: []                    # few-shot Q→SQL pairs — add the team's
+    genie_connection: "gda-genie"   # the team's registered connection_key
   max_table_rows: 20                # rows shown in the answer context
 
 prompts:
@@ -69,9 +66,3 @@ prompts:
       The data source returned no rows for that question. Try rephrasing
       with the metric, time range or identifier — or the data may not be
       in this team's space yet.
-  not_answerable:
-    version: "1.0.0"
-    content: |
-      That question can't be answered from the data I have ({reason}).
-      I can help with claims, denials and appeal metrics — or generate a
-      draft appeal for a specific claim.
