@@ -35,6 +35,39 @@ registry_router = APIRouter(prefix="/admin", tags=["Registry"])
 _REGISTRY_OBJ = "/api/v1/admin"
 
 
+def _admin_teams_of(context: SessionContext) -> list[str]:
+    raw = str((context.user_profile or {}).get("admin_teams") or "")
+    return [t for t in (p.strip().lower() for p in raw.split(",")) if t]
+
+
+async def _is_global_admin(context: SessionContext) -> bool:
+    from .....security.authorization.enforcer import get_casbin_enforcer
+
+    if not context.roles:
+        return False
+    return await get_casbin_enforcer().enforce_any_role(
+        list(context.roles), context.tenant_id, _REGISTRY_OBJ, "POST"
+    )
+
+
+async def ensure_team_admin(context: SessionContext, team_key: str) -> None:
+    """A user may administer a team when Casbin grants them the admin
+    surface (global admins, e.g. developers) OR their Entra admin group
+    maps to that team (yaml authorization.admin_group_teams)."""
+    normalized = team_key.strip().lower()
+    if normalized and normalized in _admin_teams_of(context):
+        return
+    if await _is_global_admin(context):
+        return
+    from .....utils.errors import ForbiddenError
+
+    raise ForbiddenError(
+        "You do not administer this team. Ask your directory admin to add "
+        "you to the team's admin group.",
+        details={"team_key": normalized},
+    )
+
+
 def _to_team(team: OdtTeamEntity) -> TeamModel:
     return TeamModel(
         id=team.id,
@@ -63,17 +96,76 @@ def _to_agent(agent: RegisteredAgentEntity) -> AgentModel:
     )
 
 
+@registry_router.get("/my-team", response_model=ApiEnvelope[dict])
+async def my_team(
+    context: SessionContext = Depends(get_current_context),
+    service: AgentRegistryService = Depends(provide_agent_registry_service),
+) -> ApiEnvelope[dict]:
+    """The signed-in user's admin context, resolved from their Entra
+    groups at login: which team(s) they administer, whether that team is
+    registered yet, and whether they hold global admin rights."""
+    admin_teams = _admin_teams_of(context)
+    is_global = await _is_global_admin(context)
+    teams = {t.key: t for t in await service.list_teams(context=context)}
+    return ApiEnvelope(
+        data={
+            "admin_teams": admin_teams,
+            "is_global_admin": is_global,
+            "teams": [
+                {
+                    "team_key": key,
+                    "registered": key in teams,
+                    "team": _to_team(teams[key]).model_dump(mode="json") if key in teams else None,
+                }
+                for key in admin_teams
+            ],
+        }
+    )
+
+
+@registry_router.get(
+    "/teams/{team_key}/tokens",
+    response_model=ApiEnvelope[list[dict]],
+)
+async def list_team_tokens(
+    team_key: str,
+    context: SessionContext = Depends(get_current_context),
+    tokens: TeamTokenService = Depends(provide_team_token_service),
+) -> ApiEnvelope[list[dict]]:
+    """Masked token inventory — the raw value is never retrievable (only
+    a hash is stored). The UI shows issuance state, never the secret."""
+    await ensure_team_admin(context, team_key)
+    rows = await tokens.list_for_team(context=context, team_key=team_key)
+    return ApiEnvelope(data=rows)
+
+
+@registry_router.delete(
+    "/teams/{team_key}/tokens",
+    response_model=ApiEnvelope[dict],
+    dependencies=[Depends(require_csrf)],
+)
+async def revoke_team_tokens(
+    team_key: str,
+    context: SessionContext = Depends(get_current_context),
+    tokens: TeamTokenService = Depends(provide_team_token_service),
+) -> ApiEnvelope[dict]:
+    await ensure_team_admin(context, team_key)
+    revoked = await tokens.revoke(context=context, team_key=team_key.strip().lower())
+    return ApiEnvelope(data={"revoked": revoked}, message="Active tokens revoked.")
+
+
 @registry_router.post(
     "/teams",
     response_model=ApiEnvelope[TeamModel],
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_csrf), Depends(require_permission(_REGISTRY_OBJ, "POST"))],
+    dependencies=[Depends(require_csrf)],
 )
 async def register_team(
     body: RegisterTeamRequest,
     context: SessionContext = Depends(get_current_context),
     service: AgentRegistryService = Depends(provide_agent_registry_service),
 ) -> ApiEnvelope[TeamModel]:
+    await ensure_team_admin(context, body.key)
     team = await service.register_team(
         context=context,
         key=body.key,
@@ -87,7 +179,6 @@ async def register_team(
 @registry_router.get(
     "/teams",
     response_model=ApiEnvelope[list[TeamModel]],
-    dependencies=[Depends(require_permission(_REGISTRY_OBJ, "GET"))],
 )
 async def list_teams(
     context: SessionContext = Depends(get_current_context),
@@ -101,13 +192,14 @@ async def list_teams(
     "/teams/{team_key}/tokens",
     response_model=ApiEnvelope[TeamTokenResponse],
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_csrf), Depends(require_permission(_REGISTRY_OBJ, "POST"))],
+    dependencies=[Depends(require_csrf)],
 )
 async def issue_team_token(
     team_key: str,
     context: SessionContext = Depends(get_current_context),
     tokens: TeamTokenService = Depends(provide_team_token_service),
 ) -> ApiEnvelope[TeamTokenResponse]:
+    await ensure_team_admin(context, team_key)
     token = await tokens.issue(context=context, team_key=team_key)
     return ApiEnvelope(
         data=TeamTokenResponse(team_key=team_key.strip().lower(), token=token),
@@ -152,7 +244,6 @@ async def register_agent(
 @registry_router.get(
     "/agents",
     response_model=ApiEnvelope[list[AgentModel]],
-    dependencies=[Depends(require_permission(_REGISTRY_OBJ, "GET"))],
 )
 async def list_agents(
     context: SessionContext = Depends(get_current_context),

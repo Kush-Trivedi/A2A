@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from functools import lru_cache
+from ...config.application_context import get_application_context
 from ...database.rdbms.pg_session import get_postgres_connector
 from ...security.identity.jwt_validator import ValidatedIdentity
 from ...utils.common.logger import Logger
@@ -69,8 +70,32 @@ class AuthzLoginService:
             revoked_roles=provisioned.revoked_roles,
             granted_groups=provisioned.granted_groups,
             revoked_groups=provisioned.revoked_groups,
-            authorization_attributes=self._attributes.project(identity),
+            authorization_attributes=self._admin_teams_enriched(identity),
         )
+
+    def _admin_teams_enriched(
+        self, identity: ValidatedIdentity
+    ) -> dict[str, str | int | float | bool]:
+        """Resolve the user's ADMIN team(s) from their Entra groups via the
+        yaml `authorization.admin_group_teams` map (group name -> team key)
+        and stamp them into the session profile. Config-owned, never code."""
+        attributes = dict(self._attributes.project(identity))
+        raw_map = get_application_context().authorization.get("admin_group_teams") or {}
+        mapping = {
+            str(group).strip().lower(): str(team).strip().lower()
+            for group, team in raw_map.items()
+            if str(group).strip() and str(team).strip()
+        }
+        matched = sorted(
+            {
+                mapping[str(group).strip().lower()]
+                for group in (identity.groups or ())
+                if str(group).strip().lower() in mapping
+            }
+        )
+        if matched:
+            attributes["admin_teams"] = ",".join(matched)
+        return attributes
     
 @lru_cache(maxsize=1)
 def get_authz_login_service() -> AuthzLoginService:

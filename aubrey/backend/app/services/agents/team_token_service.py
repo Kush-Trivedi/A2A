@@ -92,6 +92,36 @@ class TeamTokenService:
             logger.error("Team token validation failed", exc_info=True)
             return None
 
+    async def list_for_team(
+        self, *, context: SessionContext, team_key: str
+    ) -> list[dict]:
+        """Masked inventory — hash prefix only, never a usable value."""
+        from sqlmodel import select
+
+        normalized = team_key.strip().lower()
+        async with self._db.session() as session:
+            rows = (
+                await session.exec(
+                    select(TeamTokenEntity)
+                    .where(
+                        TeamTokenEntity.tenant_id == context.tenant_id,
+                        TeamTokenEntity.team_key == normalized,
+                    )
+                    .order_by(TeamTokenEntity.created_at.desc())  # type: ignore[attr-defined]
+                )
+            ).all()
+        return [
+            {
+                "id": t.id,
+                "label": t.label,
+                "masked": f"aub_****{t.token_hash[:6]}",
+                "revoked": t.revoked,
+                "created_at": t.created_at.isoformat(),
+                "last_used_at": t.last_used_at.isoformat() if t.last_used_at else None,
+            }
+            for t in rows
+        ]
+
     async def revoke(self, *, context: SessionContext, team_key: str) -> int:
         """Revoke every token for a team (rotation = revoke + issue)."""
         try:

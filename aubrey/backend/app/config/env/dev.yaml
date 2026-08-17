@@ -79,6 +79,10 @@ authorization:
   rbac_enabled: true
   rbac_model_path: ""
   policy_reload_seconds: 300
+  # Entra ADMIN groups -> team key: members of the group administer that
+  # team's dashboard (register team, issue tokens, onboard agents). Fill
+  # with your real group names, e.g. "ADM_IIAI_Platform_MyAdmin": "platform"
+  admin_group_teams: {}
   full_access_roles:
     - "developer"
 
