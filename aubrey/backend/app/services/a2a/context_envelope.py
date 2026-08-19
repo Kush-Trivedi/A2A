@@ -25,6 +25,10 @@ class ContextEnvelope:
     delegated_from: tuple[str, ...] = ()  # hop chain, oldest first
     # recent conversation as [{"role": "user"|"assistant", "content": ...}]
     window: tuple[dict[str, str], ...] = ()
+    # memory block (M10b, additive): {"summary": str, "facts": [str],
+    # "episodes": [str]} — decrypted plain strings; empty dict for agents
+    # that predate it, so old agents keep working untouched.
+    memory: dict = field(default_factory=dict)
 
     def to_metadata(self) -> dict[str, Any]:
         return {
@@ -38,6 +42,7 @@ class ContextEnvelope:
                 "purpose": self.purpose,
                 "delegated_from": list(self.delegated_from),
                 "window": [dict(w) for w in self.window],
+                "memory": dict(self.memory),
             }
         }
 
@@ -59,5 +64,10 @@ class ContextEnvelope:
                 {"role": str(w.get("role", "")), "content": str(w.get("content", ""))}
                 for w in payload.get("window") or ()
                 if isinstance(w, dict)
+            ),
+            memory=(
+                dict(payload["memory"])
+                if isinstance(payload.get("memory"), dict)
+                else {}
             ),
         )

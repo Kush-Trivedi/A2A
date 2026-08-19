@@ -61,6 +61,20 @@ microsoft:
 security:
   entra_authority: "https://login.microsoftonline.com"
   graph_endpoint: "https://graph.microsoft.com/v1.0"
+  # Field-level encryption at rest for memory content (AES-256-GCM).
+  # base64-encoded 16/24/32-byte key; cloud envs should point at Key Vault
+  # via lookup:. Placeholder = PLAINTEXT PASSTHROUGH with a startup warning
+  # (acceptable for local dev only).
+  field_encryption:
+    key: "your_field_encryption_key"
+  # Envelope signing (M10-S3): HMAC-SHA256 over the capability-plane
+  # context envelope (identity + delegation chain) so agents cannot mint
+  # identities. base64 key, 16+ bytes (32 recommended); cloud envs should
+  # point at Key Vault via lookup:. Placeholder = signing DISABLED —
+  # capability endpoints accept unsigned envelopes (local dev only).
+  envelope_signing:
+    key: "your_envelope_signing_key"
+    max_age_seconds: 300
   log_identity_claims: false
   identity_claim_names: []
   session:
@@ -108,10 +122,60 @@ agents:
     # conversation window (tokens) sent to agents each turn; a team manifest
     # can lower it per agent later
     window_tokens: 2000
+    summary_tokens: 300            # rolling session summary output cap
+    facts_top_k: 5                 # semantic facts recalled per turn
+    episodes_top_k: 3              # past-session episodes recalled per turn
+    layer_timeouts_ms: 250         # per-layer recall deadline (int, or map layer->ms)
+    decay_interval_seconds: 21600  # background decay + session-purge cadence
+    decay_floor: 0.05              # memory records below this weight are pruned
+    window_recent_turns: 6         # working memory: the last N turns always ride
+    window_semantic_top_k: 4       # working memory: older turns recalled by cosine
+    extraction_max_facts: 5        # cap on facts mined from one turn
+    layers_enabled: [working, semantic, episodic, prospective]
+    prospects_top_k: 3             # prospective commitments recalled per turn
+    prospect_horizon_days: 7       # recall prospects due within this window (or past-due)
+    prospect_stale_days: 30        # decay cancels open prospects this far past due
+    episodic_min_turns: 4          # first episode once a session reaches N messages
+    episodic_every_turns: 8        # then one episode every N further messages
+    # External subjects (§8.3): campaign recipients (sms:/voice: user ids).
+    # working-only = long-term memory commits are a structural no-op until a
+    # campaign opts layers in ("summary" is the rolling-summary pseudo-layer).
+    external:
+      layers_enabled: [working]
+      facts_allowlist: []          # regex list; empty = external facts never stored
+      retention_days: 30           # external facts/episodes countdown (retention sweep)
+    half_life_days:
+      facts: 90
+      episodes: 60
+    redaction:
+      # kind: regex, merged OVER built-in defaults (ssn, phone, email,
+      # credit_card, mrn, credential). Kinds in drop_kinds reject the whole
+      # record (never stored); every other match becomes [REDACTED-<kind>].
+      patterns: {}
+      drop_kinds: [credential]
+    summary_prompt: "You maintain a rolling summary of a conversation. Fold the new turns into the current summary: keep goals, decisions, and open questions; drop pleasantries; never invent details. Return ONLY the updated summary as plain text.
+
+Current summary:
+{summary}
+
+New turns:
+{turns}"
+    extraction_prompt: "Extract stable, reusable facts about the user or their domain from this exchange (preferences, identifiers already redacted, ongoing matters). Ignore one-off phrasing and anything speculative. Return ONLY a JSON array of short fact strings; return [] when nothing qualifies.
+
+User: {question}
+
+Assistant: {answer}"
   a2a:
     request_timeout_seconds: 120
     streaming_enabled: true
     card_cache_ttl_seconds: 300
+    # M5 delegation (POST /capability/agents/resolve). Agent manifests
+    # declare their peers; the platform holds no manifests, so `allowed`
+    # MIRRORS those declarations: caller agent_key -> [peer agent_keys].
+    # Empty map = delegation off. max_depth caps len(delegated_from).
+    delegation:
+      max_depth: 2
+      allowed: {}            # e.g. general: [benefit, policy_procedure]
   router:
     mode: "sparse"        # full-text only - no model credentials needed locally
     threshold: 0.42       # dense dispatch floor (cosine)
@@ -122,6 +186,36 @@ agents:
     overlap_threshold: 0.86
     fallback_agent: "general"
     utterance_cap: 32
+    collision_blocking: true    # block activation when skills overlap an active agent
+    contextualizer:
+      enabled: true             # rewrite follow-ups to standalone questions pre-routing
+      max_output_tokens: 200
+    judge_enabled: false          # sparse local runs credential-less - no LLM judge
+    judge_band: 0.08              # cosine band around threshold/margin ties that wakes the judge
+    # judge_prompt placeholders: {question} {candidates}
+    judge_prompt: |
+      You are the routing judge for a multi-agent assistant. The scored
+      candidates for the user's question are too close to call. Pick the
+      ONE agent best suited to answer, or ASK if only the user can
+      resolve it.
+
+      Candidates (key: what the agent covers):
+      {candidates}
+
+      Question: {question}
+
+      Reply with EXACTLY one token: the chosen agent key, or ASK.
+    thresholds_per_agent: {}      # per-agent dispatch floors (dense cosine), e.g. {benefit: 0.5}; empty = global threshold
+    sticky_decay_per_turn: 0.02   # switch margin shrinks per turn since the sticky agent last answered
+    feedback_weight: 0.1          # score adjustment per unit of decayed feedback mass
+    feedback_min_similarity: 0.78 # feedback rows below this cosine to the question contribute nothing
+    feedback_half_life_days: 30   # feedback mass decays 0.5^(age_days/half_life)
+    feedback_cap: 0.15            # |adjustment| ceiling per agent
+    feedback_recent_n: 500        # scan only this many newest feedback rows (plain scan, no ANN index)
+    negative_markers:             # case-insensitive answer PREFIXES meaning "wrong agent" (not_supported/no_data stems)
+      - "the data source returned no rows"
+      - "the contract data returned no rows"
+      - "that question is outside"
 
 # Platform SMS channel (Twilio). The inbound number is channel infra and
 # platform-owned; campaigns bind it to team agents. sms.default_campaign
@@ -132,7 +226,7 @@ twilio:
   phone_number: "your_twilio_phone_number"
   messaging_service_sid: ""
   webhook_base_url: ""
-  validate_signatures: true
+  validate_signatures: false   # local dev only — cloud envs fail closed
   timeout_seconds: 15
   tenant_id: "default"   # MUST match your Entra tenant id (what /auth/me shows) or campaigns will not resolve
   sms:
@@ -176,3 +270,11 @@ Examples:
 {examples}
 
 Rules: return ONLY the SQL statement, no explanation, no markdown. If the question cannot be answered from these tables, return exactly: NO_QUERY: <one short reason>."
+
+# Data retention clocks (M10-S2). Sweeps run on the memory decay interval
+# (agents.memory.decay_interval_seconds); every purge/overwrite writes a
+# deletion_evidence row. 0 disables a policy.
+retention:
+  archived_session_days: 30      # archived chat sessions -> hard delete (FK cascade)
+  sms_message_days: 365          # SMS bodies + vendor_details overwritten; ledger kept
+  genie_conversation_days: 90    # stale genie thread mappings deleted

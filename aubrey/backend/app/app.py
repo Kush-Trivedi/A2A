@@ -12,6 +12,7 @@ from .config.settings_validator import get_settings_validator
 from .database.rdbms.pg_session import dispose_postgres
 from .scripts.init_db import initialize_database_lifecycle
 from .security.authorization import get_casbin_enforcer
+from .services.memory import get_memory_decay_scheduler
 from .utils.common.logger import Logger
 
 logger = Logger(__name__).get_logger()
@@ -35,10 +36,15 @@ class ApplicationFactory:
             logger.info("Startup: initializing database + authorization")
             await initialize_database_lifecycle()
             await self._enforcer.initialize()
+            # M10b: append+decay maintenance — memory weights age and prune,
+            # expired browser sessions purge, on the yaml interval.
+            decay = get_memory_decay_scheduler()
+            decay.start()
             try:
                 yield
             finally:
                 logger.info("Shutdown: releasing resources")
+                await decay.stop()
                 await self._enforcer.close()
                 await dispose_postgres()
 

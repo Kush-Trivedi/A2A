@@ -241,6 +241,8 @@ class AgentRegistryService:
                         f"Agent '{agent_key}' is not registered.",
                         details={"agent_key": agent_key},
                     )
+                if status == AgentStatus.ACTIVE:
+                    await self._block_on_collision(session, context.tenant_id, agent.agent_key)
                 agent.status = status
                 agent.updated_at = _now()
                 session.add(agent)
@@ -259,3 +261,47 @@ def get_agent_registry_service() -> AgentRegistryService:
     if _service is None:
         _service = AgentRegistryService()
     return _service
+
+
+    async def _block_on_collision(self, session, tenant_id: str, agent_key: str) -> None:
+        """BLOCKING collision gate (NEW_PLAN M10a): an agent whose route
+        utterances overlap an ACTIVE agent's above router.overlap_threshold
+        cannot activate — the team differentiates its skills first (or yaml
+        router.collision_blocking is turned off)."""
+        from sqlalchemy import text as sql_text
+
+        from ...config.application_context import get_application_context
+
+        router = get_application_context().agents.get("router") or {}
+        if not bool(router.get("collision_blocking", False)):
+            return
+        threshold = float(router.get("overlap_threshold") or 0.86)
+        rows = (
+            await session.execute(
+                sql_text(
+                    """
+                    SELECT b.agent_key, MAX(1 - (a.embedding <=> b.embedding)) AS overlap
+                    FROM agent_routes a
+                    JOIN agent_routes b
+                      ON b.tenant_id = a.tenant_id AND b.agent_key <> a.agent_key
+                    JOIN registered_agents r
+                      ON r.tenant_id = b.tenant_id AND r.agent_key = b.agent_key
+                     AND r.status = 'active'
+                    WHERE a.tenant_id = :tenant_id AND a.agent_key = :agent_key
+                      AND a.embedding IS NOT NULL AND b.embedding IS NOT NULL
+                    GROUP BY b.agent_key
+                    ORDER BY overlap DESC
+                    LIMIT 1
+                    """
+                ),
+                {"tenant_id": tenant_id, "agent_key": agent_key},
+            )
+        ).mappings().first()
+        if rows is not None and float(rows["overlap"] or 0.0) >= threshold:
+            raise ValidationError(
+                f"Activation blocked: skills overlap active agent "
+                f"'{rows['agent_key']}' at {float(rows['overlap']):.2f} "
+                f"(threshold {threshold}). Differentiate the manifest skills "
+                "or disable router.collision_blocking.",
+                details={"colliding_agent": rows["agent_key"]},
+            )

@@ -13,7 +13,12 @@ class ContextEnvelopeModel(StrictBaseModel):
     session_id: str | None = None
     correlation_id: str | None = None
     purpose: str = ""
-    delegated_from: list[str] = []  # hop chain — bounded + cycle-checked at M5
+    delegated_from: list[str] = []  # hop chain — bounded + cycle-checked (M5)
+    # M10-S3 platform signature over the identity fields (incl. the chain).
+    # Agents carry these VERBATIM from the inbound envelope; when signing is
+    # enabled server-side, missing/invalid/stale -> 403.
+    sig: str = ""
+    issued_at: str = ""
 
 
 class RetrieveRequest(StrictBaseModel):
@@ -149,6 +154,29 @@ class SessionDocumentModel(StrictBaseModel):
 class FilesContextResponse(StrictBaseModel):
     session_id: str
     documents: list[SessionDocumentModel]
+
+
+class AgentResolveRequest(StrictBaseModel):
+    """M5 delegation handshake: the calling agent asks the platform to
+    resolve a peer for consultation. The platform guards the hop (Casbin on
+    the END USER's roles vs the peer, yaml allowlist mirror of the caller's
+    manifest-declared peers, depth cap, cycle rejection) and returns the
+    peer's address plus a FRESH platform-signed envelope with the chain
+    extended server-side."""
+
+    envelope: ContextEnvelopeModel
+    agent_key: str
+    peer_key: str
+
+
+class AgentResolveResponse(StrictBaseModel):
+    peer_key: str
+    display_name: str
+    card_url: str
+    # aubrey.context/v1 metadata block: identity fields + delegated_from
+    # extended with the caller's key + fresh sig/issued_at. Forward to the
+    # peer verbatim (window/memory may be added — they are not signed).
+    envelope: dict[str, Any]
 
 
 class CatalogAgentModel(StrictBaseModel):

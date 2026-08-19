@@ -9,7 +9,12 @@ Two layers, both mandatory:
    end user's identity and roles. Roles are RE-ENFORCED here with Casbin
    against the target agent's permission — an agent cannot escalate a
    user's access by forwarding inflated roles it never received.
-"""
+
+M10-S3 adds a third layer: when envelope signing is enabled
+(security.envelope_signing.key), the envelope must carry the platform's
+HMAC (sig + issued_at, forwarded verbatim from dispatch) and be fresh —
+agents can no longer mint identities. With no key configured, verification
+passes everything through (dev mode)."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -21,6 +26,7 @@ from ..dto.capability import ContextEnvelopeModel
 from ..entity.agents import AgentStatus, OdtTeamEntity, RegisteredAgentEntity, TeamTokenEntity
 from ..security.authorization.enforcer import get_casbin_enforcer
 from ..security.session import SessionContext
+from ..services.a2a.envelope_signer import get_envelope_signer
 from ..utils.common.logger import Logger
 from ..utils.errors import ForbiddenError, NotFoundError, UnauthorizedError
 
@@ -100,12 +106,36 @@ def context_from_envelope(
     )
 
 
+def verify_envelope_signature(
+    envelope: ContextEnvelopeModel, *, tenant_id: str
+) -> None:
+    """The envelope must be one the platform actually signed at dispatch —
+    same identity fields, bound to the TOKEN's tenant, within the freshness
+    window. No-op while signing is disabled (placeholder key)."""
+    get_envelope_signer().verify(
+        {
+            "user_id": envelope.user_id,
+            "actor_id": envelope.actor_id,
+            "roles": list(envelope.roles),
+            "session_id": envelope.session_id or "",
+            "purpose": envelope.purpose,
+            "delegated_from": list(envelope.delegated_from),
+            "sig": envelope.sig,
+            "issued_at": envelope.issued_at,
+        },
+        tenant_id=tenant_id,
+    )
+
+
 async def enforce_agent_access(
     *, envelope: ContextEnvelopeModel, agent: RegisteredAgentEntity, tenant_id: str
 ) -> None:
     """The end user's roles must permit this agent (same rule the chat
     router applies before dispatching). Agents with no declared permission
-    are open; a user with no roles is always denied."""
+    are open; a user with no roles is always denied. When envelope signing
+    is enabled, an unsigned/tampered/stale envelope is rejected FIRST —
+    roles are only trusted once the platform's signature over them holds."""
+    verify_envelope_signature(envelope, tenant_id=tenant_id)
     if not agent.permission:
         return
     if not envelope.roles:

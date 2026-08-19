@@ -160,8 +160,11 @@ class TwilioRestClient:
         if not self._validate:
             return True
         if not self.configured:
-            logger.warning("Twilio not configured — webhook signature check skipped (dev only).")
-            return True
+            # FAIL CLOSED: an unconfigured channel must never accept
+            # unauthenticated webhooks. Local dev opts out explicitly with
+            # twilio.validate_signatures: false in yaml.
+            logger.error("Twilio not configured — webhook REJECTED (fail closed).")
+            return False
         payload = url + "".join(f"{k}{params[k]}" for k in sorted(params))
         digest = hmac.new(
             self._auth_token.encode("utf-8"), payload.encode("utf-8"), hashlib.sha1

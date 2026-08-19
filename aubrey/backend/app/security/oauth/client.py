@@ -151,7 +151,7 @@ class EntraOauthClient:
                     "Entra token endpoint error",
                     extra={
                         "status_code": response.status_code,
-                        "body": response.text[:500],
+                        "body": "[redacted]",
                     },
                 )
             response.raise_for_status()

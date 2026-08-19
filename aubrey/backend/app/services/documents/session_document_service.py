@@ -4,7 +4,16 @@ Storing requires the caller to OWN the chat session (same ownership rule as
 reading messages). Reading on the service plane filters by tenant + session
 + forwarded user, so an agent can only ever see documents the envelope's
 user uploaded into the envelope's session. Re-uploading identical content
-(same sha256) into a session is skipped, not duplicated."""
+(same sha256) into a session is skipped, not duplicated.
+
+M10-S1 encryption at rest: session_documents.content (the highest-density
+PHI column in the app — full uploaded documents) is FieldEncryptor
+ciphertext, applied HERE in the service; the entity is unchanged (the Text
+column holds enc:v1: strings). Reads decrypt before returning. The enc:v1:
+prefix makes pre-encryption plaintext rows read back unchanged, and
+passthrough mode (no key, local dev) keeps writing plaintext. The sha256
+dedup key stays a hash of the PLAINTEXT — deterministic dedup must survive
+non-deterministic ciphertext."""
 
 import uuid
 
@@ -14,6 +23,7 @@ from ...database.rdbms.pg_session import get_postgres_connector
 from ...entity.chat import SessionDocumentEntity
 from ...security.session import SessionContext
 from ...utils.common.logger import Logger
+from ...utils.crypto import decrypt_or_keep, get_field_encryptor
 from ...utils.errors import DatabaseError
 from ..chat.session_service import get_chat_session_service
 from .file_upload_service import UploadPreparation
@@ -24,6 +34,7 @@ logger = Logger(__name__).get_logger()
 class SessionDocumentService:
     def __init__(self) -> None:
         self._db = get_postgres_connector()
+        self._encryptor = get_field_encryptor()
 
     async def store(
         self,
@@ -64,7 +75,7 @@ class SessionDocumentService:
                             file_name=prepared.file_name,
                             sha256=prepared.sha256,
                             characters=prepared.characters,
-                            content=prepared.text,
+                            content=self._encryptor.encrypt(prepared.text),
                         )
                     )
                     stored += 1
@@ -87,20 +98,25 @@ class SessionDocumentService:
         user only sees what they uploaded into this session."""
         try:
             async with self._db.session() as session:
-                rows = (
-                    await session.exec(
-                        select(SessionDocumentEntity)
-                        .where(
-                            SessionDocumentEntity.tenant_id == tenant_id,
-                            SessionDocumentEntity.user_id == user_id,
-                            SessionDocumentEntity.session_id == session_id,
+                rows = list(
+                    (
+                        await session.exec(
+                            select(SessionDocumentEntity)
+                            .where(
+                                SessionDocumentEntity.tenant_id == tenant_id,
+                                SessionDocumentEntity.user_id == user_id,
+                                SessionDocumentEntity.session_id == session_id,
+                            )
+                            .order_by(SessionDocumentEntity.created_at)  # type: ignore[arg-type]
                         )
-                        .order_by(SessionDocumentEntity.created_at)  # type: ignore[arg-type]
-                    )
-                ).all()
-                return list(rows)
+                    ).all()
+                )
         except Exception as exc:
             raise DatabaseError(cause=exc) from exc
+        # Decrypt on detached rows; legacy plaintext rows pass through.
+        for row in rows:
+            row.content = decrypt_or_keep(self._encryptor, row.content)
+        return rows
 
 
 _service: SessionDocumentService | None = None

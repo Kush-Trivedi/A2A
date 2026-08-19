@@ -23,11 +23,18 @@ class SmsConsentEntity(TimestampModel, table=True):
     __table_args__ = (
         UniqueConstraint("tenant_id", "phone", name="uq_sms_consent_tenant_phone"),
         Index("idx_sms_consent_tenant_status", "tenant_id", "status"),
+        Index("idx_sms_consent_tenant_phone_hash", "tenant_id", "phone_hash"),
     )
 
     id: str = Field(sa_column=Column(Text, primary_key=True))
     tenant_id: str = Field(sa_column=Column(Text, nullable=False))
-    phone: str = Field(sa_column=Column(Text, nullable=False))  # E.164
+    # M10-S1 searchable encryption: new writes store FieldEncryptor
+    # ciphertext here and the HMAC in phone_hash (the lookup key). Legacy
+    # rows keep plaintext until their next transition re-writes them.
+    phone: str = Field(sa_column=Column(Text, nullable=False))  # E.164, encrypted at rest
+    phone_hash: str = Field(
+        default="", sa_column=Column(Text, nullable=False, default="")
+    )  # HMAC-SHA256(field key, E.164) — deterministic equality lookup
     status: str = Field(sa_column=Column(Text, nullable=False))  # opted_in | opted_out
     # admin | keyword | inbound_first_contact
     source: str = Field(sa_column=Column(Text, nullable=False))

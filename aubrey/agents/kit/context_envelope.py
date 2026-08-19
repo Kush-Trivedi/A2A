@@ -1,9 +1,15 @@
 """Mirror of aubrey's context envelope (namespace aubrey.context/v1) — how
 an agent learns who it is acting for and what was said so far. The kit
 never trusts these values for ACCESS decisions; aubrey re-enforces roles on
-every capability call."""
+every capability call.
 
-from dataclasses import dataclass
+M10-S3: `sig` + `issued_at` are the platform's HMAC over the identity
+fields (tenant, user, actor, roles, session, purpose, delegated_from).
+The kit carries them VERBATIM — never recomputes, never edits the signed
+fields — because capability endpoints verify them when signing is enabled.
+Older platforms omit them; the defaults keep those agents working."""
+
+from dataclasses import dataclass, field
 from typing import Any
 
 ENVELOPE_NAMESPACE = "aubrey.context/v1"
@@ -20,6 +26,12 @@ class ContextEnvelope:
     purpose: str = "chat"
     delegated_from: tuple[str, ...] = ()
     window: tuple[dict[str, str], ...] = ()
+    # memory block (M10b, additive): {"summary": str, "facts": [str],
+    # "episodes": [str]} — absent from older platforms, so default empty.
+    memory: dict = field(default_factory=dict)
+    # M10-S3 platform signature (additive) — pass through verbatim.
+    sig: str = ""
+    issued_at: str = ""
 
     def to_metadata(self) -> dict[str, Any]:
         return {
@@ -33,6 +45,9 @@ class ContextEnvelope:
                 "purpose": self.purpose,
                 "delegated_from": list(self.delegated_from),
                 "window": [dict(w) for w in self.window],
+                "memory": dict(self.memory),
+                "sig": self.sig,
+                "issued_at": self.issued_at,
             }
         }
 
@@ -55,4 +70,11 @@ class ContextEnvelope:
                 for w in payload.get("window") or ()
                 if isinstance(w, dict)
             ),
+            memory=(
+                dict(payload["memory"])
+                if isinstance(payload.get("memory"), dict)
+                else {}
+            ),
+            sig=str(payload.get("sig") or ""),
+            issued_at=str(payload.get("issued_at") or ""),
         )

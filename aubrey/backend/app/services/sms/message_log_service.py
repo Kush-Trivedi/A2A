@@ -3,16 +3,28 @@ lifecycle. Status callbacks append to `status_history` (never overwrite),
 error codes get their human explanation attached, and inbound records are
 idempotent on MessageSid so a Twilio webhook retry can never double-reply
 (the legacy platform had that bug — the duplicate was caught only AFTER
-the reply had been sent)."""
+the reply had been sent).
+
+M10-S1 encryption at rest, applied HERE in the service (entities keep
+plain Text columns holding enc:v1: strings): sms_messages.body is
+FieldEncryptor ciphertext, and the phone uses the searchable scheme —
+stored value encrypted, deterministic HMAC in phone_hash for equality
+lookups. Every phone lookup filters phone_hash OR plain phone equality so
+legacy plaintext rows (written before M10-S1, no hash) keep matching.
+Reads decrypt before returning; the enc:v1: prefix makes old plaintext
+rows read back unchanged, and passthrough mode (no key, local dev) keeps
+writing plaintext."""
 
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import or_
 from sqlmodel import select
 
 from ...database.rdbms.pg_session import get_postgres_connector
 from ...entity.sms import SmsDirection, SmsMessageEntity
 from ...utils.common.logger import Logger
+from ...utils.crypto import decrypt_or_keep, get_field_encryptor, get_phone_hasher
 from ...utils.errors import DatabaseError
 from ...utils.telephony import explain_error_code
 
@@ -22,6 +34,17 @@ logger = Logger(__name__).get_logger()
 class SmsMessageLogService:
     def __init__(self) -> None:
         self._db = get_postgres_connector()
+        self._encryptor = get_field_encryptor()
+        self._phones = get_phone_hasher()
+
+    def _phone_filter(self, phone: str):
+        """phone_hash equality for M10-S1 rows, plain-phone equality as the
+        fallback for legacy rows written before the hash column existed."""
+        cleaned = (phone or "").strip()
+        return or_(
+            SmsMessageEntity.phone_hash == self._phones.hash(cleaned),
+            SmsMessageEntity.phone == cleaned,
+        )
 
     async def inbound_exists(self, *, twilio_sid: str) -> bool:
         """Idempotency check — MUST run before any processing/reply."""
@@ -137,7 +160,7 @@ class SmsMessageLogService:
                     await session.exec(
                         select(SmsMessageEntity.id).where(
                             SmsMessageEntity.tenant_id == tenant_id,
-                            SmsMessageEntity.phone == phone,
+                            self._phone_filter(phone),
                             SmsMessageEntity.direction == SmsDirection.INBOUND,
                             SmsMessageEntity.created_at >= cutoff,  # type: ignore[arg-type]
                         )
@@ -161,7 +184,7 @@ class SmsMessageLogService:
                     SmsMessageEntity.tenant_id == tenant_id
                 )
                 if phone:
-                    statement = statement.where(SmsMessageEntity.phone == phone.strip())
+                    statement = statement.where(self._phone_filter(phone))
                 if campaign_key:
                     statement = statement.where(
                         SmsMessageEntity.campaign_key == campaign_key.strip().lower()
@@ -169,9 +192,15 @@ class SmsMessageLogService:
                 statement = statement.order_by(
                     SmsMessageEntity.created_at.desc()  # type: ignore[attr-defined]
                 ).limit(max(1, min(limit, 500)))
-                return list((await session.exec(statement)).all())
+                rows = list((await session.exec(statement)).all())
         except Exception as exc:
             raise DatabaseError(cause=exc) from exc
+        # Decrypt on detached rows for the admin audit surface; legacy
+        # plaintext rows pass through unchanged.
+        for row in rows:
+            row.body = decrypt_or_keep(self._encryptor, row.body)
+            row.phone = decrypt_or_keep(self._encryptor, row.phone)
+        return rows
 
     async def _record(
         self,
@@ -192,18 +221,22 @@ class SmsMessageLogService:
         vendor_details: dict | None = None,
     ) -> SmsMessageEntity:
         now = datetime.now(timezone.utc)
+        cleaned = (phone or "").strip()
         try:
             async with self._db.session() as session:
                 message = SmsMessageEntity(
                     id=uuid.uuid4().hex,
                     tenant_id=tenant_id,
-                    phone=phone,
+                    # Searchable encryption (M10-S1): ciphertext in phone,
+                    # deterministic HMAC in phone_hash for lookups.
+                    phone=self._encryptor.encrypt(cleaned),
+                    phone_hash=self._phones.hash(cleaned),
                     direction=direction,
                     campaign_key=campaign_key,
                     agent_key=agent_key,
                     session_id=session_id,
                     twilio_sid=twilio_sid,
-                    body=body,
+                    body=self._encryptor.encrypt(body),
                     status=status,
                     error_code=str(error_code or ""),
                     error_explanation=explain_error_code(error_code),
@@ -216,9 +249,12 @@ class SmsMessageLogService:
                     ],
                 )
                 session.add(message)
-                return message
         except Exception as exc:
             raise DatabaseError(cause=exc) from exc
+        # Detached after commit — the caller keeps seeing plaintext.
+        message.phone = cleaned
+        message.body = body
+        return message
 
 
 _service: SmsMessageLogService | None = None

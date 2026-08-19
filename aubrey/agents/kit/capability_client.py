@@ -10,7 +10,9 @@ from typing import Any
 
 import httpx
 
-from .context_envelope import ContextEnvelope
+from .context_envelope import ENVELOPE_NAMESPACE, ContextEnvelope
+from .executor import current_task_id
+from .peer_client import stream_peer_text
 
 
 class CapabilityError(RuntimeError):
@@ -20,6 +22,9 @@ class CapabilityError(RuntimeError):
 
 
 def _envelope_payload(envelope: ContextEnvelope) -> dict[str, Any]:
+    # sig/issued_at ride VERBATIM (M10-S3): aubrey signed these identity
+    # fields at dispatch, and capability endpoints verify them when signing
+    # is enabled. Empty strings on platforms that predate signing.
     return {
         "user_id": envelope.user_id,
         "actor_id": envelope.actor_id,
@@ -28,6 +33,8 @@ def _envelope_payload(envelope: ContextEnvelope) -> dict[str, Any]:
         "correlation_id": envelope.correlation_id or None,
         "purpose": envelope.purpose,
         "delegated_from": list(envelope.delegated_from),
+        "sig": envelope.sig,
+        "issued_at": envelope.issued_at,
     }
 
 
@@ -241,6 +248,94 @@ class AubreyCapabilityClient:
             )
             self._raise_for_status(response)
             return list(response.json()["data"]["agents"])
+
+    async def resolve_peer(
+        self, *, envelope: ContextEnvelope, peer_key: str
+    ) -> dict[str, Any]:
+        """M5 delegation handshake. Aubrey authorizes the hop (peer active +
+        permitted to the END USER, caller's declared peer per the yaml
+        mirror of the manifest, depth cap, cycle rejection) and returns
+        {peer_key, display_name, card_url, envelope} where `envelope` is a
+        FRESH platform-signed metadata block with delegated_from extended
+        server-side — the chain is signature-covered, so agents cannot
+        extend it themselves."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.post(
+                f"{self._base_url}/api/v1/capability/agents/resolve",
+                headers=self._headers,
+                json={
+                    "envelope": _envelope_payload(envelope),
+                    "agent_key": self._agent_key,
+                    "peer_key": peer_key,
+                },
+            )
+            self._raise_for_status(response)
+            return dict(response.json()["data"])
+
+    def _peer_metadata(
+        self, envelope: ContextEnvelope, signed_envelope: dict[str, Any]
+    ) -> dict[str, Any]:
+        """The metadata block the peer receives: the platform-signed
+        identity verbatim, plus this agent's local conversation context
+        (window/memory are NOT signature-covered, so adding them is safe)."""
+        payload = dict(signed_envelope)
+        payload.setdefault("window", [dict(w) for w in envelope.window])
+        payload.setdefault("memory", dict(envelope.memory))
+        return {ENVELOPE_NAMESPACE: payload}
+
+    async def delegate_stream(
+        self,
+        *,
+        envelope: ContextEnvelope,
+        peer_key: str,
+        question: str,
+        task_id: str | None = None,
+    ) -> tuple[str, AsyncIterator[str]]:
+        """Resolve first, then stream — returns (peer_key, async_iterator)
+        so the caller can attribute BEFORE the first chunk arrives. How an
+        agent streams a peer's answer with attribution (display_name comes
+        from resolve_peer if you want the human-readable name):
+
+            resolved = await client.resolve_peer(envelope=env, peer_key="benefit")
+            peer_key, chunks = await client.delegate_stream(
+                envelope=env, peer_key="benefit", question=question)
+            yield f"[{resolved['display_name']}] "
+            async for chunk in chunks:
+                yield chunk
+
+        `task_id` defaults to the executing turn's A2A task id (from the
+        kit executor's contextvar) and rides as referenceTaskIds on the
+        peer message — the lineage of the consultation."""
+        resolved = await self.resolve_peer(envelope=envelope, peer_key=peer_key)
+        signed = dict(resolved.get("envelope") or {})
+        reference = task_id if task_id is not None else current_task_id()
+        iterator = stream_peer_text(
+            card_url=str(resolved.get("card_url") or ""),
+            text=question,
+            context_id=envelope.session_id or envelope.correlation_id,
+            metadata=self._peer_metadata(envelope, signed),
+            reference_task_ids=(reference,) if reference else (),
+            timeout_seconds=self._timeout,
+        )
+        return str(resolved.get("peer_key") or peer_key), iterator
+
+    async def delegate(
+        self,
+        *,
+        envelope: ContextEnvelope,
+        peer_key: str,
+        question: str,
+        task_id: str | None = None,
+    ) -> AsyncIterator[str]:
+        """Consult a peer agent and yield its text chunks. Resolution
+        (authorization + signed chain extension) happens on first
+        iteration; prefix attribution is the caller's choice — use
+        delegate_stream when you need the peer identity before streaming."""
+        _, chunks = await self.delegate_stream(
+            envelope=envelope, peer_key=peer_key, question=question, task_id=task_id
+        )
+        async for chunk in chunks:
+            yield chunk
 
     async def register_self(self, payload: dict[str, Any]) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=self._timeout) as client:

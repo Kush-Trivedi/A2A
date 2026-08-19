@@ -11,6 +11,7 @@ dependencies = [
     "azure-storage-blob>=12.30.0",
     "casbin>=1.43.0",
     "casbin-async-sqlalchemy-adapter>=1.17.0",
+    "cryptography>=50.0.0",
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
     "itsdangerous>=2.2.0",

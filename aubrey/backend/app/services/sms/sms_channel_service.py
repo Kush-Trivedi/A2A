@@ -17,6 +17,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import or_
 from sqlmodel import select
 
 from ...database.rdbms.pg_session import get_postgres_connector
@@ -25,11 +26,13 @@ from ...entity.sms import CampaignMode, ConsentStatus, SmsThreadEntity
 from ...security.authorization.enforcer import get_casbin_enforcer
 from ...security.session import SessionContext
 from ...utils.common.logger import Logger
+from ...utils.crypto import get_field_encryptor, get_phone_hasher
 from ...utils.errors import AppError, DatabaseError, ForbiddenError
 from ..a2a.a2a_client_service import get_a2a_client_service
 from ..a2a.context_envelope import ContextEnvelope
 from ..chat.memory_window import get_memory_window_builder
 from ..chat.session_service import get_chat_session_service
+from ..memory import MemoryBundle, MemoryScope, get_memory_orchestrator
 from ...utils.telephony import SmsSendError
 from .campaign_service import get_sms_campaign_service
 from .consent_service import KeywordKind, classify_keyword, get_sms_consent_service
@@ -84,6 +87,11 @@ class SmsChannelService:
         self._twilio = get_twilio_rest_client()
         self._sessions = get_chat_session_service()
         self._windows = get_memory_window_builder()
+        # M10-S1 searchable encryption: sms_threads.phone is ciphertext at
+        # rest, phone_hash the deterministic lookup key; every lookup keeps
+        # a plain-phone fallback for legacy rows.
+        self._encryptor = get_field_encryptor()
+        self._phones = get_phone_hasher()
 
     # ------------------------------------------------------------------ #
     # Outreach                                                            #
@@ -213,7 +221,7 @@ class SmsChannelService:
         if keyword == KeywordKind.OPT_OUT:
             await self._consent.record_opt_out(
                 tenant_id=tenant_id, phone=phone, source="keyword",
-                keyword=body.strip().lower(),
+                keyword="opt_out",
             )
             await self._ledger.record_inbound(
                 tenant_id=tenant_id, phone=phone, body=body,
@@ -224,7 +232,7 @@ class SmsChannelService:
         if keyword == KeywordKind.OPT_IN:
             await self._consent.record_opt_in(
                 tenant_id=tenant_id, phone=phone, source="keyword",
-                keyword=body.strip().lower(),
+                keyword="opt_in",
             )
             await self._ledger.record_inbound(
                 tenant_id=tenant_id, phone=phone, body=body,
@@ -366,11 +374,34 @@ class SmsChannelService:
     async def _generate(
         self, *, tenant_id: str, phone: str, agent, session_id: str, text: str, purpose: str
     ) -> str:
-        history = await self._sessions.list_messages(
-            context=self._phone_context(tenant_id, phone, session_id),
-            session_id=session_id,
+        # M10b channel parity: the IDENTICAL orchestrator call the web
+        # surface makes — memory keys on (tenant, user, session), so the
+        # sms: scope gets the same hybrid window/summary/recall for free.
+        # The subject_type derived from the sms: prefix is what stricter
+        # external-subject rules attach to in M10c.
+        scope = MemoryScope(
+            tenant_id=tenant_id, user_id=f"sms:{phone}",
+            session_id=session_id, channel="sms",
         )
-        window = self._windows.build(history, window_tokens=self._settings.window_tokens)
+        try:
+            bundle = await get_memory_orchestrator().assemble(
+                scope, text, window_tokens=self._settings.window_tokens
+            )
+        except Exception:  # noqa: BLE001 — memory is never a gate
+            logger.warning("SMS memory assembly failed — dispatching without it", exc_info=True)
+            bundle = MemoryBundle(question=text)
+        window = tuple(bundle.window)
+        if not window:
+            history = await self._sessions.list_messages(
+                context=self._phone_context(tenant_id, phone, session_id),
+                session_id=session_id,
+            )
+            window = tuple(
+                {"role": w.role, "content": w.content}
+                for w in self._windows.build(
+                    history, window_tokens=self._settings.window_tokens
+                )
+            )
         envelope = ContextEnvelope(
             tenant_id=tenant_id,
             user_id=f"sms:{phone}",
@@ -378,7 +409,8 @@ class SmsChannelService:
             roles=(self._settings.user_role,),
             session_id=session_id,
             purpose=purpose,
-            window=tuple({"role": w.role, "content": w.content} for w in window),
+            window=window,
+            memory=bundle.memory_block(),
         )
         chunks: list[str] = []
         async for event in get_a2a_client_service().stream_message(
@@ -390,7 +422,20 @@ class SmsChannelService:
         answer = "".join(chunks).strip()
         if not answer:
             raise ForbiddenError("The campaign agent produced no message.")
-        return self._cap_length(answer)
+        answer = self._cap_length(answer)
+        # M10c §8.3: SMS turns now COMMIT memory — but ONLY through the
+        # MemoryPolicy the orchestrator consults for this scope. The
+        # external default (agents.memory.external.layers_enabled:
+        # [working]) makes this a structural no-op — nothing is persisted
+        # beyond the session record — until a campaign opts specific
+        # layers in via yaml. The mechanism exists; policy holds the gate.
+        try:
+            get_memory_orchestrator().commit_background(
+                scope, question=text, answer=answer
+            )
+        except Exception:  # noqa: BLE001 — memory is never a gate
+            logger.warning("SMS memory commit scheduling failed", exc_info=True)
+        return answer
 
     def _cap_length(self, body: str) -> str:
         cap = self._settings.max_length
@@ -474,6 +519,14 @@ class SmsChannelService:
             roles=(self._settings.user_role,),
         )
 
+    def _thread_phone_filter(self, phone: str):
+        """phone_hash equality for M10-S1 rows, plain-phone fallback for
+        legacy rows written before the hash column existed."""
+        return or_(
+            SmsThreadEntity.phone_hash == self._phones.hash(phone),
+            SmsThreadEntity.phone == phone,
+        )
+
     async def _thread_for(
         self, *, tenant_id: str, phone: str, campaign_key: str, agent_key: str
     ) -> SmsThreadEntity:
@@ -483,7 +536,7 @@ class SmsChannelService:
                     await session.exec(
                         select(SmsThreadEntity).where(
                             SmsThreadEntity.tenant_id == tenant_id,
-                            SmsThreadEntity.phone == phone,
+                            self._thread_phone_filter(phone),
                             SmsThreadEntity.campaign_key == campaign_key,
                         )
                     )
@@ -502,15 +555,18 @@ class SmsChannelService:
                 thread = SmsThreadEntity(
                     id=uuid.uuid4().hex,
                     tenant_id=tenant_id,
-                    phone=phone,
+                    phone=self._encryptor.encrypt(phone),
+                    phone_hash=self._phones.hash(phone),
                     campaign_key=campaign_key,
                     agent_key=agent_key,
                     session_id=chat.id,
                 )
                 session.add(thread)
-                return thread
         except Exception as exc:
             raise DatabaseError(cause=exc) from exc
+        # Detached after commit — callers keep seeing plaintext.
+        thread.phone = phone
+        return thread
 
     async def _latest_thread(
         self, *, tenant_id: str, phone: str
@@ -522,7 +578,7 @@ class SmsChannelService:
                         select(SmsThreadEntity)
                         .where(
                             SmsThreadEntity.tenant_id == tenant_id,
-                            SmsThreadEntity.phone == phone,
+                            self._thread_phone_filter(phone),
                         )
                         .order_by(SmsThreadEntity.updated_at.desc())  # type: ignore[attr-defined]
                     )

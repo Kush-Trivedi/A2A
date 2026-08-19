@@ -7,8 +7,10 @@ from ..entity import chat as _chat_entities  # noqa: F401 — registers tables
 from ..entity import data as _data_entities  # noqa: F401 — registers tables
 from ..entity import documents as _document_entities  # noqa: F401 — registers tables
 from ..entity import knowledge as _knowledge_entities  # noqa: F401 — registers tables
+from ..entity import memory as _memory_entities  # noqa: F401 — registers tables
 from ..entity import sms as _sms_entities  # noqa: F401 — registers tables
 from ..entity.knowledge import ensure_pgvector_extension, ensure_pgvector_indexes
+from ..entity.memory import ensure_memory_indexes
 from ..utils.errors import DatabaseError
 
 # Schema comes entirely from the entity classes: create_all makes every
@@ -35,3 +37,4 @@ async def initialize_database_lifecycle() -> None:
             ) from exc
         await connection.run_sync(SQLModel.metadata.create_all)
         await ensure_pgvector_indexes(connection)
+        await ensure_memory_indexes(connection)

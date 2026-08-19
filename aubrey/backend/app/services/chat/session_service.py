@@ -3,7 +3,15 @@
 Every surface (web now, SMS later) shares this model: a session is owned by
 (tenant, user), its id doubles as the A2A contextId, and every turn's
 messages land here — data at rest, always. Stickiness reads the last
-ANSWER message's agent_key from metadata; routing messages never stick."""
+ANSWER message's agent_key from metadata; routing messages never stick.
+
+M10-S1 encryption at rest: chat_messages.content and
+message_edit_versions.content are FieldEncryptor ciphertext, applied HERE
+in the service (entities unchanged — the Text columns hold enc:v1:
+strings). Reads decrypt before returning, so every caller keeps seeing
+plaintext. The enc:v1: prefix makes pre-encryption plaintext rows read
+back unchanged, and passthrough mode (no key configured, local dev) keeps
+writing plaintext — turning the key on later never breaks old rows."""
 
 import uuid
 from datetime import datetime, timezone
@@ -12,12 +20,13 @@ from sqlmodel import select
 
 from ...database.rdbms.pg_session import get_postgres_connector
 from ...entity.chat import (
-    ChatMessageEntity, ChatSessionEntity, 
+    ChatMessageEntity, ChatSessionEntity,
     MessageEditChainEntity, MessageEditVersionEntity, MessageFeedbackEntity,
     MessageKind, MessageRole
 )
 from ...security.session import SessionContext
 from ...utils.common.logger import Logger
+from ...utils.crypto import decrypt_or_keep, get_field_encryptor
 from ...utils.errors import DatabaseError, NotFoundError, ValidationError
 
 logger = Logger(__name__).get_logger()
@@ -40,6 +49,7 @@ def _title_from(text: str) -> str:
 class ChatSessionService:
     def __init__(self) -> None:
         self._db = get_postgres_connector()
+        self._encryptor = get_field_encryptor()
 
     async def create_session(
         self, *, context: SessionContext, title: str = "", channel: str = "web"
@@ -150,7 +160,9 @@ class ChatSessionService:
                     user_id=context.user_id,
                     actor_id=context.actor_id,
                     role=role,
-                    content=content,
+                    # Encrypt-at-write (M10-S1); the title is derived from
+                    # the plaintext BEFORE encryption.
+                    content=self._encryptor.encrypt(content),
                     message_metadata=dict(metadata or {}),
                 )
                 session.add(message)
@@ -158,11 +170,13 @@ class ChatSessionService:
                     thread.title = _title_from(content)
                 thread.updated_at = datetime.now(timezone.utc)
                 session.add(thread)
-                return message
         except (NotFoundError, ValidationError):
             raise
         except Exception as exc:
             raise DatabaseError(cause=exc) from exc
+        # Detached after commit — callers keep seeing plaintext.
+        message.content = content
+        return message
 
     async def list_messages(
         self, *, context: SessionContext, session_id: str
@@ -272,7 +286,10 @@ class ChatSessionService:
         if message.role != MessageRole.USER:
             raise ValidationError("Only user messages can be edited.")
 
-        if message.content == value:
+        # _owned_message returns the stored (possibly encrypted) value —
+        # compare plaintext to plaintext.
+        if decrypt_or_keep(self._encryptor, message.content) == value:
+            message.content = value
             return message
 
         try:
@@ -311,36 +328,47 @@ class ChatSessionService:
                         id=uuid.uuid4().hex,
                         chain_id=chain.id,
                         version_number=version_number,
+                        # The prior stored value verbatim — already
+                        # ciphertext for rows written after M10-S1, so
+                        # edit versions are encrypted at rest too.
                         content=editable.content,
                     )
                 )
-                editable.content = value
+                editable.content = self._encryptor.encrypt(value)
                 editable.updated_at = datetime.now(tz=timezone.utc)
                 session.add(editable)
-                return editable
         except ValidationError:
             raise
         except Exception as exc:
             raise DatabaseError(cause=exc) from exc
+        # Detached after commit — the caller sees plaintext.
+        editable.content = value
+        return editable
 
     async def _messages(
         self, tenant_id: str, session_id: str
     ) -> list[ChatMessageEntity]:
         try:
             async with self._db.session() as session:
-                rows = (
-                    await session.exec(
-                        select(ChatMessageEntity)
-                        .where(
-                            ChatMessageEntity.session_id == session_id,
-                            ChatMessageEntity.tenant_id == tenant_id,
+                rows = list(
+                    (
+                        await session.exec(
+                            select(ChatMessageEntity)
+                            .where(
+                                ChatMessageEntity.session_id == session_id,
+                                ChatMessageEntity.tenant_id == tenant_id,
+                            )
+                            .order_by(ChatMessageEntity.created_at)  # type: ignore[arg-type]
                         )
-                        .order_by(ChatMessageEntity.created_at)  # type: ignore[arg-type]
-                    )
-                ).all()
-                return list(rows)
+                    ).all()
+                )
         except Exception as exc:
             raise DatabaseError(cause=exc) from exc
+        # Decrypt OUTSIDE the session (rows are detached — the plaintext can
+        # never be flushed back). Legacy plaintext rows pass through.
+        for row in rows:
+            row.content = decrypt_or_keep(self._encryptor, row.content)
+        return rows
 
 
     async def _owned_message(

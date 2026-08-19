@@ -48,7 +48,10 @@ def _to_connection(connection: ConnectionEntity) -> ConnectionModel:
         connection_key=connection.connection_key,
         source_type=connection.source_type,
         description=connection.description,
-        config={k: str(v) for k, v in (connection.config or {}).items()},
+        config={
+            k: ("***" if any(s in k.lower() for s in ("secret", "token", "password", "key", "credential", "auth_header_value")) else str(v))
+            for k, v in (connection.config or {}).items()
+        },
         created_at=connection.created_at,
         updated_at=connection.updated_at,
     )

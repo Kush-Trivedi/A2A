@@ -53,7 +53,7 @@ class SessionStore:
         profile = user_profile or {}
 
         entity = BrowserSessionEntity(
-            session_id=session_id,
+            session_id=self._crypto.hash(session_id),
             tenant_id=tenant_id,
             user_id=user_id,
             actor_id=actor_id,
@@ -101,7 +101,7 @@ class SessionStore:
         verify_fingerprint: bool = True,
     ) -> SessionContext | None:
         async with self._db.session() as session:
-            record = await session.get(BrowserSessionEntity, session_id)
+            record = await session.get(BrowserSessionEntity, self._crypto.hash(session_id))
             if record is None:
                 return None
 
@@ -118,12 +118,12 @@ class SessionStore:
                 )
                 return None
 
-            return self._to_context(record)
+            return self._to_context(record, raw_session_id=session_id)
 
     async def touch(self, session_id: str) -> None:
         stmt = (
             update(BrowserSessionEntity)
-            .where(col(BrowserSessionEntity.session_id) == session_id)
+            .where(col(BrowserSessionEntity.session_id) == self._crypto.hash(session_id))
             .values(last_seen_at=_now())
         )
         async with self._db.session() as session:
@@ -131,7 +131,7 @@ class SessionStore:
 
     async def delete(self, session_id: str) -> None:
         stmt = delete(BrowserSessionEntity).where(
-            col(BrowserSessionEntity.session_id) == session_id
+            col(BrowserSessionEntity.session_id) == self._crypto.hash(session_id)
         )
         async with self._db.session() as session:
             await session.exec(stmt)
@@ -177,9 +177,13 @@ class SessionStore:
             ip_hash, record.ip_hash
         ) and self._crypto.verify_hash(ua_hash, record.user_agent_hash)
 
-    def _to_context(self, record: BrowserSessionEntity) -> SessionContext:
+    def _to_context(
+        self, record: BrowserSessionEntity, raw_session_id: str | None = None
+    ) -> SessionContext:
+        # PK is the HASH of the cookie value (a DB read must never yield a
+        # usable session id); the context carries the raw value when known.
         return SessionContext(
-            session_id=record.session_id,
+            session_id=raw_session_id or record.session_id,
             tenant_id=record.tenant_id,
             user_id=record.user_id,
             actor_id=record.actor_id,

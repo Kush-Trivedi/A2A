@@ -9,6 +9,7 @@ meta, token, artifact, state, disambiguation, refusal, error, done."""
 
 import uuid
 from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
 
 from sqlmodel import select
 
@@ -28,6 +29,10 @@ from ...utils.common.logger import Logger
 from ...utils.errors import AppError, ValidationError
 from .memory_window import MemoryWindowBuilder, get_memory_window_builder
 from .session_service import ChatSessionService, get_chat_session_service
+
+if TYPE_CHECKING:  # runtime import stays lazy — services.memory imports this
+    # package back through its layers, so a module-level import would cycle.
+    from ..memory import MemoryBundle, MemoryScope
 
 logger = Logger(__name__).get_logger()
 
@@ -89,16 +94,57 @@ class ConversationService:
         sticky = await self._sessions.sticky_agent(
             tenant_id=context.tenant_id, session_id=session.id
         )
+        # M10d: stickiness decays with distance — count the user turns since
+        # the sticky agent last ANSWERed so route() can shrink the switch
+        # margin (0 = the old behavior).
+        turns_since_sticky = 0
+        if sticky:
+            for message in reversed(history):
+                meta = message.message_metadata or {}
+                if (
+                    message.role == MessageRole.ASSISTANT
+                    and meta.get("kind") == MessageKind.ANSWER
+                    and meta.get("agent_key") == sticky
+                ):
+                    break
+                if message.role == MessageRole.USER:
+                    turns_since_sticky += 1
+        # M10a: rewrite follow-ups into standalone questions before routing
+        # and dispatch — the original stays in history, the rewritten text
+        # drives scoring and the agent's retrieval.
+        from .contextualizer import get_query_contextualizer
+        from .memory_window import get_memory_window_builder
+
+        window_for_rewrite = get_memory_window_builder().build(history)
+        routed_question = await get_query_contextualizer().rewrite(
+            question=cleaned, window=window_for_rewrite
+        )
+        # M10b: one memory assembly per turn — hybrid recency+relevance
+        # window, rolling summary, fact/episode recall — deadline-bounded
+        # inside the orchestrator; a total failure degrades to no memory,
+        # never a failed turn.
+        from ..memory import MemoryBundle, MemoryScope, get_memory_orchestrator
+
+        scope = MemoryScope(
+            tenant_id=context.tenant_id, user_id=context.user_id,
+            session_id=session.id, channel=session.channel,
+        )
+        try:
+            bundle = await get_memory_orchestrator().assemble(scope, routed_question)
+        except Exception:  # noqa: BLE001 — memory is never a gate
+            logger.warning("Memory assembly failed — dispatching without it", exc_info=True)
+            bundle = MemoryBundle(question=routed_question)
         decision = await self._router.route(
-            context=context, question=cleaned,
+            context=context, question=routed_question,
             sticky_agent=sticky, requested_agent=agent_key,
+            turns_since_sticky=turns_since_sticky,
         )
 
         if decision.action in (RouteAction.DISPATCH, RouteAction.FALLBACK):
             async for event in self._dispatch(
                 context=context, session_id=session.id,
-                question=cleaned, history=history, decision=decision,
-                user_message_id=user_message.id,
+                question=routed_question, history=history, decision=decision,
+                user_message_id=user_message.id, scope=scope, bundle=bundle,
             ):
                 yield event
             return
@@ -138,6 +184,8 @@ class ConversationService:
         history: list,
         decision: RouteDecision,
         user_message_id: str,
+        scope: "MemoryScope",
+        bundle: "MemoryBundle",
     ) -> AsyncIterator[tuple[str, dict]]:
         agent = decision.matched
         yield "meta", {
@@ -153,7 +201,13 @@ class ConversationService:
             }
             return
 
-        window = self._windows.build(history)
+        # The working layer's hybrid window replaces the plain recency build;
+        # when it contributed nothing this turn (timeout/failure), the old
+        # recency window is the floor, so agents never lose context they had
+        # before M10b.
+        window = tuple(bundle.window) or tuple(
+            {"role": w.role, "content": w.content} for w in self._windows.build(history)
+        )
         envelope = ContextEnvelope(
             tenant_id=context.tenant_id,
             user_id=context.user_id,
@@ -161,7 +215,8 @@ class ConversationService:
             roles=tuple(context.roles),
             session_id=session_id,
             correlation_id=uuid.uuid4().hex,
-            window=tuple({"role": w.role, "content": w.content} for w in window),
+            window=window,
+            memory=bundle.memory_block(),
         )
 
         parts: list[str] = []
@@ -190,6 +245,25 @@ class ConversationService:
             role=MessageRole.ASSISTANT, content=answer,
             metadata={"kind": MessageKind.ANSWER, "agent_key": agent.agent_key},
         )
+        # M10b: post-turn memory commit (summary roll + fact extraction) in
+        # the background — the reply never waits on memory writes.
+        if answer:
+            from ..memory import get_memory_orchestrator
+
+            get_memory_orchestrator().commit_background(
+                scope, question=question, answer=answer
+            )
+            # M10d: the routing outcome feeds the learning ledger (fire and
+            # forget) — positive for a real answer, negative when the answer
+            # opens with a not_supported/no_data marker (yaml
+            # agents.router.negative_markers).
+            if decision.action == RouteAction.DISPATCH:
+                from ..agents.router_learning_service import get_router_learning_service
+
+                get_router_learning_service().record_outcome_background(
+                    tenant_id=context.tenant_id, question=question,
+                    answer=answer, agent_key=agent.agent_key,
+                )
         yield "done", {"session_id": session_id,"user_message_id": user_message_id, "message_id": message.id}
 
     async def _refusal_payload(

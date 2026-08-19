@@ -99,7 +99,7 @@ class TeamTokenService:
         from sqlmodel import select
 
         normalized = team_key.strip().lower()
-        async with self._db.session() as session:
+        async with self._connector.session() as session:
             rows = (
                 await session.exec(
                     select(TeamTokenEntity)
@@ -114,7 +114,7 @@ class TeamTokenService:
             {
                 "id": t.id,
                 "label": t.label,
-                "masked": f"aub_****{t.token_hash[:6]}",
+                "masked": f"ace-tk-****{t.id[-6:]}",
                 "revoked": t.revoked,
                 "created_at": t.created_at.isoformat(),
                 "last_used_at": t.last_used_at.isoformat() if t.last_used_at else None,

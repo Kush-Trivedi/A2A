@@ -9,8 +9,12 @@ Casbin, and only then serves:
     POST /capability/knowledge/retrieve   grant-scoped hybrid + 1-hop graph
     POST /capability/llm/chat/stream      SSE token stream (data: {"text"})
     POST /capability/files/context        session-scoped uploads (file agent)
+    POST /capability/agents/resolve       M5 delegation handshake (peer + signed envelope)
 
-No CSRF here — this plane is bearer-token, not cookies.
+No CSRF here — this plane is bearer-token, not cookies. When envelope
+signing is enabled (security.envelope_signing.key), every envelope must
+carry the platform's sig/issued_at forwarded verbatim — enforced inside
+enforce_agent_access/verify_envelope_signature.
 """
 
 import json
@@ -22,6 +26,8 @@ from .....config.application_context import get_application_context
 from .....config.settings_validator import PlaceholderPolicy
 from .....dto.base import ApiEnvelope
 from .....dto.capability import (
+    AgentResolveRequest,
+    AgentResolveResponse,
     CatalogAgentModel,
     CatalogRequest,
     CatalogResponse,
@@ -45,7 +51,9 @@ from .....security.service_auth import (
     enforce_agent_access,
     require_service_token,
     resolve_owned_agent,
+    verify_envelope_signature,
 )
+from .....services.a2a import get_delegation_service, get_dispatch_auditor
 from .....entity.documents import ConnectionType
 from .....services.agents.agent_catalog_service import get_agent_catalog_service
 from .....services.data import DataAnswer, get_data_query_service, get_text2sql_service
@@ -134,6 +142,7 @@ async def agents_catalog(
     """Live Casbin-scoped catalog for the forwarded user — what the general
     agent grounds its 'what can I access?' answers on."""
     await resolve_owned_agent(token=token, agent_key=body.agent_key)
+    verify_envelope_signature(body.envelope, tenant_id=token.tenant_id)
     agents = await get_agent_catalog_service().list_for(
         tenant_id=token.tenant_id, roles=tuple(body.envelope.roles)
     )
@@ -148,6 +157,62 @@ async def agents_catalog(
                 )
                 for a in agents
             ]
+        )
+    )
+
+
+@capability_router.post(
+    "/agents/resolve", response_model=ApiEnvelope[AgentResolveResponse]
+)
+async def agents_resolve(
+    body: AgentResolveRequest,
+    token: TeamTokenEntity = Depends(require_service_token),
+) -> ApiEnvelope[AgentResolveResponse]:
+    """M5 delegation handshake — an agent may only consult a peer through
+    here. Manifests declare an agent's peers; the platform holds no
+    manifests, so agents.a2a.delegation.allowed in the env yaml MIRRORS
+    those declarations (caller agent_key -> [peer agent_keys]). The peer
+    must be registered, ACTIVE, permitted to the envelope's END USER by the
+    same Casbin rule as any dispatch, within the depth cap, and not already
+    in the chain. The response includes a FRESH platform-signed envelope
+    with delegated_from extended server-side — the chain is signature-
+    covered, so callers cannot extend it themselves."""
+    caller = await resolve_owned_agent(token=token, agent_key=body.agent_key)
+    await enforce_agent_access(
+        envelope=body.envelope, agent=caller, tenant_id=token.tenant_id
+    )
+    delegation = get_delegation_service()
+    peer = await delegation.resolve_peer(
+        tenant_id=token.tenant_id,
+        caller_key=caller.agent_key,
+        peer_key=body.peer_key,
+        chain=tuple(body.envelope.delegated_from),
+    )
+    # The END USER's roles must permit the peer too — delegation never
+    # widens access beyond what the user could reach directly.
+    await enforce_agent_access(
+        envelope=body.envelope, agent=peer, tenant_id=token.tenant_id
+    )
+    signed = delegation.signed_envelope(
+        envelope=body.envelope,
+        tenant_id=token.tenant_id,
+        caller_key=caller.agent_key,
+    )
+    await get_dispatch_auditor().record_delegation(
+        tenant_id=token.tenant_id,
+        actor_id=body.envelope.actor_id or body.envelope.user_id,
+        roles=tuple(body.envelope.roles),
+        correlation_id=body.envelope.correlation_id or body.envelope.session_id or "",
+        caller_key=caller.agent_key,
+        peer_key=peer.agent_key,
+        chain=tuple(signed.get("delegated_from") or ()),
+    )
+    return ApiEnvelope(
+        data=AgentResolveResponse(
+            peer_key=peer.agent_key,
+            display_name=peer.display_name,
+            card_url=str(peer.card_url or ""),
+            envelope=signed,
         )
     )
 

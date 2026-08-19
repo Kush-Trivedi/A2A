@@ -17,11 +17,16 @@ class SmsThreadEntity(TimestampModel, table=True):
             "tenant_id", "phone", "campaign_key", name="uq_sms_threads_phone_campaign"
         ),
         Index("idx_sms_threads_tenant_phone", "tenant_id", "phone"),
+        Index("idx_sms_threads_tenant_phone_hash", "tenant_id", "phone_hash"),
     )
 
     id: str = Field(sa_column=Column(Text, primary_key=True))
     tenant_id: str = Field(sa_column=Column(Text, nullable=False))
-    phone: str = Field(sa_column=Column(Text, nullable=False))  # E.164
+    # M10-S1: new rows store ciphertext here; phone_hash is the lookup key.
+    phone: str = Field(sa_column=Column(Text, nullable=False))  # E.164, encrypted at rest
+    phone_hash: str = Field(
+        default="", sa_column=Column(Text, nullable=False, default="")
+    )  # HMAC-SHA256(field key, E.164)
     campaign_key: str = Field(sa_column=Column(Text, nullable=False))
     agent_key: str = Field(sa_column=Column(Text, nullable=False))
     session_id: str = Field(

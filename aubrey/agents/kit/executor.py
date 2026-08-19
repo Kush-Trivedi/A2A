@@ -6,8 +6,14 @@ out. An agent implements ONE async generator:
 
 The kit streams each chunk as an A2A text message on the live context/task.
 Failures propagate — the platform's error translator turns them into typed
-events; nothing is masked with canned fallback answers."""
+events; nothing is masked with canned fallback answers.
 
+While answer_stream runs, the A2A task id of the turn is available via
+current_task_id() (a contextvar — additive, no signature change), so
+helpers like AubreyCapabilityClient.delegate can link the peer consult to
+this task through referenceTaskIds."""
+
+import contextvars
 from collections.abc import AsyncIterator, Callable
 
 from google.protobuf import json_format
@@ -20,6 +26,17 @@ from a2a.types import TaskState, TaskStatus, TaskStatusUpdateEvent
 from .context_envelope import ContextEnvelope
 
 AnswerStream = Callable[[str, ContextEnvelope | None], AsyncIterator[str]]
+
+_current_task_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "kit_current_task_id", default=""
+)
+
+
+def current_task_id() -> str:
+    """The A2A task id of the turn currently executing on this async
+    context — empty outside a turn. Used for referenceTaskIds lineage when
+    delegating to a peer."""
+    return _current_task_id.get()
 
 
 class KitAgentExecutor(AgentExecutor):
@@ -42,19 +59,23 @@ class KitAgentExecutor(AgentExecutor):
         await event_queue.enqueue_event(
             new_task(task_id=task_id, context_id=context_id, state=TaskState.TASK_STATE_WORKING)
         )
-        async for chunk in self._answer_stream(
-            context.get_user_input(), self._envelope_from(context)
-        ):
-            if not chunk:
-                continue
-            await event_queue.enqueue_event(
-                new_text_status_update_event(
-                    task_id=context.task_id,
-                    context_id=context.context_id,
-                    status=TaskStatus.TASK_STATE_WORKING,
-                    text=chunk,
+        token = _current_task_id.set(task_id)
+        try:
+            async for chunk in self._answer_stream(
+                context.get_user_input(), self._envelope_from(context)
+            ):
+                if not chunk:
+                    continue
+                await event_queue.enqueue_event(
+                    new_text_status_update_event(
+                        task_id=context.task_id,
+                        context_id=context.context_id,
+                        status=TaskStatus.TASK_STATE_WORKING,
+                        text=chunk,
+                    )
                 )
-            )
+        finally:
+            _current_task_id.reset(token)
 
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(

@@ -1,4 +1,6 @@
 from .models import (
+    AgentResolveRequest,
+    AgentResolveResponse,
     CatalogAgentModel,
     CatalogRequest,
     CatalogResponse,
@@ -22,6 +24,8 @@ from .models import (
 )
 
 __all__ = [
+    "AgentResolveRequest",
+    "AgentResolveResponse",
     "CatalogAgentModel",
     "CatalogRequest",
     "CatalogResponse",

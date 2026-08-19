@@ -23,18 +23,25 @@ class SmsMessageEntity(TimestampModel, table=True):
     __table_args__ = (
         Index("idx_sms_messages_sid", "twilio_sid"),
         Index("idx_sms_messages_tenant_phone", "tenant_id", "phone", "created_at"),
+        Index(
+            "idx_sms_messages_tenant_phone_hash", "tenant_id", "phone_hash", "created_at"
+        ),
         Index("idx_sms_messages_tenant_campaign", "tenant_id", "campaign_key", "created_at"),
     )
 
     id: str = Field(sa_column=Column(Text, primary_key=True))
     tenant_id: str = Field(sa_column=Column(Text, nullable=False))
-    phone: str = Field(sa_column=Column(Text, nullable=False))  # the remote party, E.164
+    # M10-S1: new rows store ciphertext here; phone_hash is the lookup key.
+    phone: str = Field(sa_column=Column(Text, nullable=False))  # remote party E.164, encrypted at rest
+    phone_hash: str = Field(
+        default="", sa_column=Column(Text, nullable=False, default="")
+    )  # HMAC-SHA256(field key, E.164)
     direction: str = Field(sa_column=Column(Text, nullable=False))  # inbound | outbound
     campaign_key: str = Field(default="", sa_column=Column(Text, nullable=False, default=""))
     agent_key: str = Field(default="", sa_column=Column(Text, nullable=False, default=""))
     session_id: str = Field(default="", sa_column=Column(Text, nullable=False, default=""))
     twilio_sid: str = Field(default="", sa_column=Column(Text, nullable=False, default=""))
-    body: str = Field(sa_column=Column(Text, nullable=False))
+    body: str = Field(sa_column=Column(Text, nullable=False))  # encrypted at rest (M10-S1)
     status: str = Field(sa_column=Column(Text, nullable=False))
     error_code: str = Field(default="", sa_column=Column(Text, nullable=False, default=""))
     error_explanation: str = Field(

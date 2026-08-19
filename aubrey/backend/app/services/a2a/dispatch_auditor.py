@@ -41,6 +41,47 @@ class A2ADispatchAuditor:
                 exc_info=True,
             )
 
+    async def record_delegation(
+        self,
+        *,
+        tenant_id: str,
+        actor_id: str,
+        roles: tuple[str, ...],
+        correlation_id: str,
+        caller_key: str,
+        peer_key: str,
+        chain: tuple[str, ...],
+    ) -> None:
+        """One audit row per delegation resolve (M5) — who consulted whom,
+        on whose behalf, with the full hop chain."""
+        logger.info(
+            "A2A delegation resolved",
+            extra={
+                "caller_key": caller_key,
+                "peer_key": peer_key,
+                "chain": list(chain),
+            },
+        )
+        try:
+            async with self._db.session() as session:
+                session.add(
+                    PolicyAuditLogEntity(
+                        actor_id=actor_id,
+                        tenant_id=tenant_id,
+                        action="a2a_delegation",
+                        target_role=",".join(roles),
+                        target_domain=correlation_id,
+                        target_resource=f"agent:{peer_key}",
+                        target_action=f"chain:{'>'.join(chain) or '-'}",
+                    )
+                )
+        except Exception:  # noqa: BLE001 — auditing must never break a turn
+            logger.error(
+                "A2A delegation audit write failed",
+                extra={"caller_key": caller_key, "peer_key": peer_key},
+                exc_info=True,
+            )
+
 
 _auditor: A2ADispatchAuditor | None = None
 

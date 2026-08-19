@@ -2,7 +2,16 @@ from .a2a_client_service import A2AClientService, A2AStreamEvent, get_a2a_client
 from .a2a_settings import A2ASettings, get_a2a_settings
 from .artifact_mapper import ArtifactMapper, MappedArtifact
 from .context_envelope import ENVELOPE_NAMESPACE, ContextEnvelope
+from .delegation_service import (
+    DelegationService,
+    DelegationSettings,
+    extend_chain,
+    get_delegation_service,
+    get_delegation_settings,
+    validate_hop,
+)
 from .dispatch_auditor import A2ADispatchAuditor, get_dispatch_auditor
+from .envelope_signer import EnvelopeSigner, get_envelope_signer
 from .error_translator import A2AErrorTranslator
 from .message_factory import A2AMessageFactory
 from .part_mapper import PartMapper
@@ -17,11 +26,19 @@ __all__ = [
     "A2AStreamEvent",
     "ArtifactMapper",
     "ContextEnvelope",
+    "DelegationService",
+    "DelegationSettings",
     "ENVELOPE_NAMESPACE",
+    "EnvelopeSigner",
     "MappedArtifact",
     "PartMapper",
     "TaskLifecycleTracker",
+    "extend_chain",
     "get_a2a_client_service",
     "get_a2a_settings",
+    "get_delegation_service",
+    "get_delegation_settings",
     "get_dispatch_auditor",
+    "get_envelope_signer",
+    "validate_hop",
 ]

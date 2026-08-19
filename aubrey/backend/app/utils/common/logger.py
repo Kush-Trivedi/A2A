@@ -32,6 +32,7 @@ class Logger:
                         show_path=True,
                         markup=True,
                         rich_tracebacks=True,
+                        tracebacks_show_locals=False,
                         show_time=False,
                     )
                     handler.setFormatter(

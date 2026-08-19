@@ -29,6 +29,7 @@ from .....entity.sms import ConsentStatus, SmsCampaignEntity, SmsConsentEntity, 
 from .....security.authorization import require_permission
 from .....security.dependencies import get_current_context, require_csrf
 from .....security.session import SessionContext
+from .....services.retention import RetentionService, get_retention_service
 from .....services.sms import (
     SmsCampaignService,
     SmsChannelService,
@@ -287,6 +288,35 @@ async def send_outreach(
             ],
         ),
         message="Outreach batch finished.",
+    )
+
+
+@sms_admin_router.delete(
+    "/subjects/{phone}",
+    response_model=ApiEnvelope[dict],
+    dependencies=[Depends(require_csrf), Depends(require_permission(_ADMIN_OBJ, "POST"))],
+)
+async def erase_subject(
+    phone: str,
+    context: SessionContext = Depends(get_current_context),
+    service: RetentionService = Depends(get_retention_service),
+) -> ApiEnvelope[dict]:
+    """Right-to-erasure for one external subject (NEW_PLAN §8.3, M10-S2):
+    deletes the subject's memory facts/episodes, cancels + blanks their
+    prospects, hard-deletes their SMS thread sessions (FK cascade reaps
+    messages, edits, session documents, threads), overwrites message
+    bodies (the delivery ledger and consent history stay — TCPA evidence),
+    and writes deletion-evidence rows keyed by the phone's HMAC token."""
+    cleaned = phone.strip()
+    if not cleaned.startswith("+") or len(cleaned) < 8:
+        raise ValidationError(
+            "Phone numbers must be E.164 (e.g. +15551234567).",
+            details={"phone": cleaned},
+        )
+    tenant_id = get_sms_settings().tenant_id
+    summary = await service.erase_external_subject(tenant_id=tenant_id, phone=cleaned)
+    return ApiEnvelope(
+        data=summary, message="Subject erased; deletion evidence recorded."
     )
 
 

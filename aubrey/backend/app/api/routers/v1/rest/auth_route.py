@@ -161,7 +161,7 @@ async def oauth_callback(
     try:
         tokens = await oauth.exchange_code(code=code, code_verifier=oauth_state.code_verifier)
     except Exception as exc:
-        logger.error("Token exchange failed", extra={"error": str(exc)})
+        logger.error("Token exchange failed", extra={"error_type": type(exc).__name__})
         raise ExternalServiceError("Token exchange failed.", cause=exc) from exc
 
     if not tokens.id_token:
@@ -170,7 +170,7 @@ async def oauth_callback(
     try:
         identity = await validator.validate(tokens.id_token)
     except Exception as exc:
-        logger.error("ID token validation failed", extra={"error": str(exc)})
+        logger.error("ID token validation failed", extra={"error_type": type(exc).__name__})
         raise InvalidTokenError("ID token validation failed.", cause=exc) from exc
 
     IdentityClaimDiagnostics.log(identity)
