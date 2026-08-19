@@ -3,6 +3,7 @@ from .capability_route import capability_router
 from .chat_route import chat_router
 from .documents_route import connections_router, documents_router
 from .files_route import files_router
+from .mcp_server_route import mcp_server_router
 from .registry_route import onboarding_router, registry_router
 from .sms_route import sms_admin_router, sms_webhook_router
 
@@ -13,6 +14,7 @@ __all__ = [
     "connections_router",
     "documents_router",
     "files_router",
+    "mcp_server_router",
     "oauth_compact_router",
     "onboarding_router",
     "registry_router",

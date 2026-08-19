@@ -32,6 +32,8 @@ from .....dto.capability import (
     FilesContextRequest,
     FilesContextResponse,
     LlmStreamRequest,
+    McpCallRequest,
+    McpToolsRequest,
     RetrievedChunkModel,
     RetrieveRequest,
     RetrieveResponse,
@@ -228,6 +230,51 @@ async def data_sql(
     )
     answer = await service.execute_sql(connection=connection, statement=body.statement)
     return ApiEnvelope(data=_to_data_answer(answer))
+
+
+@capability_router.post("/mcp/tools", response_model=ApiEnvelope[list])
+async def mcp_tools(
+    body: McpToolsRequest,
+    token: TeamTokenEntity = Depends(require_service_token),
+) -> ApiEnvelope[list]:
+    """Vendor tools available on a team's MCP connection. Credentials stay
+    platform-side; agents only ever see tool names and schemas."""
+    from .....services.data import get_data_query_service
+    from .....services.mcp import get_mcp_gateway_service
+
+    agent = await resolve_owned_agent(token=token, agent_key=body.agent_key)
+    await enforce_agent_access(
+        envelope=body.envelope, agent=agent, tenant_id=token.tenant_id
+    )
+    connection = await get_data_query_service().resolve_connection(
+        tenant_id=token.tenant_id, team_key=token.team_key,
+        connection_key=body.connection_key, expected_type=ConnectionType.MCP,
+    )
+    tools = await get_mcp_gateway_service().list_tools(connection=connection)
+    return ApiEnvelope(data=tools)
+
+
+@capability_router.post("/mcp/call", response_model=ApiEnvelope[dict])
+async def mcp_call(
+    body: McpCallRequest,
+    token: TeamTokenEntity = Depends(require_service_token),
+) -> ApiEnvelope[dict]:
+    from .....services.data import get_data_query_service
+    from .....services.mcp import get_mcp_gateway_service
+
+    agent = await resolve_owned_agent(token=token, agent_key=body.agent_key)
+    await enforce_agent_access(
+        envelope=body.envelope, agent=agent, tenant_id=token.tenant_id
+    )
+    connection = await get_data_query_service().resolve_connection(
+        tenant_id=token.tenant_id, team_key=token.team_key,
+        connection_key=body.connection_key, expected_type=ConnectionType.MCP,
+    )
+    result = await get_mcp_gateway_service().call_tool(
+        connection=connection, agent_key=agent.agent_key,
+        tool=body.tool, arguments=body.arguments,
+    )
+    return ApiEnvelope(data=result)
 
 
 @capability_router.post(

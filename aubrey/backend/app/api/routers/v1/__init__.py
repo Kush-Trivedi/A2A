@@ -7,6 +7,7 @@ from .rest import (
     connections_router,
     documents_router,
     files_router,
+    mcp_server_router,
     oauth_compact_router,
     onboarding_router,
     registry_router,
@@ -25,5 +26,6 @@ v1_router.include_router(capability_router)
 v1_router.include_router(chat_router)
 v1_router.include_router(sms_admin_router)
 v1_router.include_router(sms_webhook_router)
+v1_router.include_router(mcp_server_router)
 
 __all__ = ["oauth_compact_router", "v1_router"]

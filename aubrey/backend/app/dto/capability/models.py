@@ -104,6 +104,32 @@ class DataAnswerModel(StrictBaseModel):
     reason: str = ""
 
 
+class McpToolsRequest(StrictBaseModel):
+    envelope: ContextEnvelopeModel
+    agent_key: str
+    connection_key: str
+
+
+class McpCallRequest(StrictBaseModel):
+    envelope: ContextEnvelopeModel
+    agent_key: str
+    connection_key: str
+    tool: str
+    arguments: dict[str, Any] = {}
+
+
+class McpToolModel(StrictBaseModel):
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+
+
+class McpCallResponse(StrictBaseModel):
+    is_error: bool
+    text: str
+    structured: dict[str, Any]
+
+
 class FilesContextRequest(StrictBaseModel):
     """Session-scoped uploads for the envelope's session — the file
     agent's only knowledge source. The session id comes from the envelope

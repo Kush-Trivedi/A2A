@@ -29,6 +29,9 @@ _REQUIRED_CONFIG = {
     # map (host+PAT are platform-held); the space/warehouse is team-owned.
     ConnectionType.GENIE: ("workspace", "space_id"),
     ConnectionType.DATABRICKS_SQL: ("workspace", "warehouse_id"),
+    # Vendor MCP server: server_url required; optional auth_header_name
+    # (default Authorization) + auth_header_value for the vendor credential.
+    ConnectionType.MCP: ("server_url",),
 }
 
 

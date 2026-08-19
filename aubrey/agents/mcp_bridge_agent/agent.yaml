@@ -1,0 +1,61 @@
+agent:
+  key: "mcp_bridge_agent"
+  team_key: "platform"          # re-key to the team that owns the vendor
+  display_name: "Vendor Bridge"
+  description: "Answers questions by using the team's purchased vendor capability over MCP - the vendor does the work, Aubrey governs and audits it"
+  version: "0.1.0"
+  permission: "chat"
+  allowed_roles: ["developer"]
+  skills:
+    - id: "vendor_capability"
+      name: "Vendor capability"
+      description: "Uses the connected vendor's tools to answer questions in its domain - replace this text and the examples with the vendor's actual capability so routing works"
+      examples:
+        - "Ask the vendor system about my item"
+        - "Look this up in the vendor tool"
+
+server:
+  host: "0.0.0.0"
+  port: 8120
+  public_url: "http://localhost:8120"
+
+aubrey:
+  base_url: "http://localhost:3000"
+
+settings:
+  mcp:
+    connection: "vendor-mcp"    # the team's registered mcp connection_key
+    tools_cache_seconds: 300
+
+prompts:
+  select_tool:
+    version: "1.0.0"
+    content: |
+      You route a user question to ONE vendor tool. Available tools:
+      {tools}
+      Reply with ONLY a JSON object, no other text:
+      {"tool": "<name>", "arguments": {...}} to call a tool, or
+      {"answer": "<text>"} if no tool fits and you can answer directly,
+      or {"answer": "NOT_SUPPORTED"} if the question is outside every
+      tool's purpose.
+  system:
+    version: "1.0.0"
+    content: |
+      You are {display_name}. Answer the user's question using ONLY the
+      vendor tool result provided in context. Be concise and factual;
+      if the result does not contain the answer, say so plainly.
+  tool_context:
+    version: "1.0.0"
+    content: |
+      Vendor tool result ({tool}):
+      {result}
+  not_supported:
+    version: "1.0.0"
+    content: |
+      That question is outside what this vendor capability covers. Ask
+      about {display_name}'s domain, or try another assistant.
+  vendor_error:
+    version: "1.0.0"
+    content: |
+      The vendor service could not complete that request right now.
+      Please try again shortly; the team has visibility into the failure.

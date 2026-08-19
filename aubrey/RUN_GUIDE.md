@@ -402,6 +402,35 @@ on the contracts tables) → start the agent with the supply-chain token →
 activate. Every new data domain is this same recipe: team + space +
 connection + manifest — zero platform code.
 
+## Vendor gateway (MCP) — piece 1
+
+Third-party vendor tools plug in as connections; agents consume them
+through the capability plane with platform-held credentials and full
+audit. Register: `POST /api/v1/admin/connections` with
+`source_type: "mcp"`, config `{server_url, auth_header_name?,
+auth_header_value?}`. Agents then call `POST /capability/mcp/tools`
+(discover: name/description/schema) and `POST /capability/mcp/call`
+({tool, arguments} → {is_error, text, structured}) via the kit's
+`mcp_tools()` / `mcp_call()`. Vendor URLs and secrets never reach agents;
+every call logs team, agent, connection, and tool. Piece 2 — **MCP bridge agent** (`agents/mcp_bridge_agent`, port 8120):
+copy the template, set `settings.mcp.connection` to the team's mcp
+connection, replace the manifest skills with the vendor's real
+capability, register + activate. The vendor becomes a routable agent:
+the LLM picks the right vendor tool, the platform executes it with
+stored credentials, the answer streams back grounded on the result.
+Swap vendor for an internal build later without touching anything else.
+
+Piece 3 — **Aubrey as an MCP server** (`POST /api/v1/mcp`): any MCP
+client authenticates with a TEAM SERVICE TOKEN (Bearer) and gets three
+governed tools: `ask_agent` {agent_key, question}, `retrieve_knowledge`
+{agent_key, query, top_k?}, `query_data` {connection_key, agent_key,
+question}. Stateless 2026-07-28 dialect is primary; legacy `initialize`
+is answered for older clients. A token reaches only its own team's
+agents and connections; every call is logged.
+
+Remaining: external A2A vendor agents with outbound auth (lands with
+M5's authenticated hops).
+
 ## Troubleshooting
 
 - **403 on admin/chat endpoints** — CSRF missing/stale: re-run

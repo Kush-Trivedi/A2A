@@ -12,6 +12,7 @@ class ConnectionType:
     SHAREPOINT = "sharepoint"
     GENIE = "genie"                    # Databricks AI/BI Genie space
     DATABRICKS_SQL = "databricks_sql"  # direct warehouse SQL (fast lane)
+    MCP = "mcp"                        # third-party MCP server (vendor tools)
 
 
 class ConnectionEntity(TimestampModel, table=True):

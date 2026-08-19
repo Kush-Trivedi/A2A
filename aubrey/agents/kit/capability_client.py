@@ -171,6 +171,45 @@ class AubreyCapabilityClient:
             self._raise_for_status(response)
             return dict(response.json()["data"])
 
+    async def mcp_tools(
+        self, *, envelope: ContextEnvelope, connection_key: str
+    ) -> list[dict[str, Any]]:
+        """Vendor tools on the team's MCP connection — [{name, description,
+        input_schema}]. Credentials never reach the agent."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.post(
+                f"{self._base_url}/api/v1/capability/mcp/tools",
+                headers=self._headers,
+                json={
+                    "envelope": _envelope_payload(envelope),
+                    "agent_key": self._agent_key,
+                    "connection_key": connection_key,
+                },
+            )
+            self._raise_for_status(response)
+            return list(response.json()["data"])
+
+    async def mcp_call(
+        self, *, envelope: ContextEnvelope, connection_key: str,
+        tool: str, arguments: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Invoke a vendor MCP tool through the platform gateway —
+        {is_error, text, structured}. Audited server-side."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.post(
+                f"{self._base_url}/api/v1/capability/mcp/call",
+                headers=self._headers,
+                json={
+                    "envelope": _envelope_payload(envelope),
+                    "agent_key": self._agent_key,
+                    "connection_key": connection_key,
+                    "tool": tool,
+                    "arguments": dict(arguments or {}),
+                },
+            )
+            self._raise_for_status(response)
+            return dict(response.json()["data"])
+
     async def session_documents(
         self, *, envelope: ContextEnvelope
     ) -> list[dict[str, Any]]:
