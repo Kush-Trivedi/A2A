@@ -73,6 +73,7 @@ class RouterLearningSettings:
     judge_band: float
     judge_prompt: str
     judge_max_output_tokens: int
+    judge_model: str
     negative_markers: tuple[str, ...]
     feedback_weight: float
     feedback_min_similarity: float
@@ -99,6 +100,7 @@ def get_router_learning_settings() -> RouterLearningSettings:
         judge_band=float(cfg.get("judge_band", 0.08)),
         judge_prompt=str(cfg.get("judge_prompt") or _DEFAULT_JUDGE_PROMPT),
         judge_max_output_tokens=int(cfg.get("judge_max_output_tokens", 16)),
+        judge_model=str(cfg.get("judge_model") or ""),  # "" = platform default
         negative_markers=markers,
         feedback_weight=float(cfg.get("feedback_weight", 0.1)),
         feedback_min_similarity=float(cfg.get("feedback_min_similarity", 0.78)),

@@ -417,16 +417,21 @@ class QuestionRouterService:
 
             from ...llm.azure_foundry import get_ace_azure_foundry
 
+            import time as _t
+            _started = _t.monotonic()
             reply = await get_ace_azure_foundry().acomplete_chat(
                 messages=[{"role": "system", "content": prompt}],
+                model=self._learning.judge_model or None,
                 max_output_tokens=self._learning.judge_max_output_tokens,
             )
+            _elapsed_ms = int((_t.monotonic() - _started) * 1000)
             parsed = parse_judge_reply(reply, [c.agent_key for c in permitted])
             logger.info(
                 "Router judge outcome",
                 extra={
                     "reason": reason,
                     "verdict": parsed or "unparseable",
+                    "latency_ms": _elapsed_ms,
                     "scores": {c.agent_key: round(c.score, 4) for c in candidates},
                 },
             )

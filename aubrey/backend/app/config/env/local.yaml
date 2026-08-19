@@ -189,8 +189,11 @@ Assistant: {answer}"
     collision_blocking: true    # block activation when skills overlap an active agent
     contextualizer:
       enabled: true             # rewrite follow-ups to standalone questions pre-routing
+      model: ""                 # fast/cheap deployment for the rewrite (""=default chat model)
+      min_chars_to_skip: 60     # questions this long with no follow-up markers skip the rewrite
       max_output_tokens: 200
-    judge_enabled: false          # sparse local runs credential-less - no LLM judge
+    judge_enabled: false
+    judge_model: ""             # fast/cheap deployment for the arbiter (""=default)          # sparse local runs credential-less - no LLM judge
     judge_band: 0.08              # cosine band around threshold/margin ties that wakes the judge
     # judge_prompt placeholders: {question} {candidates}
     judge_prompt: |

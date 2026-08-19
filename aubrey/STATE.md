@@ -76,6 +76,17 @@ what is DONE, IN PROGRESS, and NEXT. Update every working session.
 7. **M5** — Delegation (parallel track; unlocks vendor A2A piece 4, SMS→web consults)
 8. M9 dashboards (Ask Aubrey button), semantic query cache (M7b), Langfuse
 
+## Routing latency posture (2026-08-20)
+
+Routing core = embedding score (ms). Two optional LLM touchpoints, both
+fail-open + model-swappable via yaml:
+- Judge (agents.router.judge_*): fires ONLY on ambiguous band, rare;
+  judge_model="" default, set a fast deployment to shrink it; latency logged.
+- Contextualizer (agents.router.contextualizer): rewrites follow-ups
+  pre-routing. Gated — skips no-window turns AND self-contained questions
+  (>= min_chars_to_skip, no follow_up_markers). model="" default, set fast
+  deployment. Latency logged per call. Turn off via enabled:false.
+
 ## Standing decisions
 
 Two teams model superseded by many (platform, hr-team, data-analytics,
