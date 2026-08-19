@@ -1,4 +1,4 @@
-# NEW_PLAN — Aubrey Memory Architecture + Cognitive Engine v2
+# NEW_PLAN — Aubrey Memory Architecture + Cognitive Engine
 
 Goal: a ChatGPT/Claude-grade conversational experience — the platform
 remembers, anticipates, and routes intelligently — built as an
@@ -135,13 +135,13 @@ working): `aubrey.context/v1` gains a `memory` block:
 changes per channel.
 
 --------------------------------------------------------------------
-## 4. The turn pipeline (Cognitive Engine v2 integrated)
+## 4. The turn pipeline (Cognitive Engine integrated)
 
 ```
 question in (any channel)
   → QueryContextualizer: rewrite to standalone using working memory
       ("what about children?" → "what is the PT copay for children?")
-  → Router v2 on the REWRITTEN question:
+  → Routing on the REWRITTEN question:
       T1  fallback agent excluded from scoring (bugfix)
       T1  blocking collision gate at activation (overlap > threshold
           vs active agents → cannot activate without differentiation
@@ -202,7 +202,7 @@ agents:
 --------------------------------------------------------------------
 ## 7. Build phases (each verifiable independently)
 
-- **M10a — Router v2 T1 + contextualizer** (small, immediate): fallback
+- **M10a — Router upgrades T1 + contextualizer** (small, immediate): fallback
   exclusion, blocking collision gate, QueryContextualizer wired before
   routing. Verify: follow-up questions route correctly in a fresh test.
 - **M10b — Memory core**: scope/record/layer contracts, orchestrator,
